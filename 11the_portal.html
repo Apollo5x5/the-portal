@@ -1,0 +1,2864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>The Portal: Weekly Objective HUD</title>
+    <!-- Web App Manifest & Mobile Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0e1217">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://placehold.co/192x192/0e1217/d4af37?text=Portal">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js for procedural ambient audio -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Identity Services client for Google Tasks OAuth2 -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-night: #0e1217;
+            --gold: #d4af37;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--bg-night);
+            color: #e2e8f0;
+            overflow-x: hidden;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .font-rpg {
+            font-family: 'Cinzel', serif;
+            letter-spacing: 0.05em;
+        }
+
+        .quest-card {
+            background: rgba(22, 28, 38, 0.72);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .quest-card:hover {
+            border-color: rgba(212, 175, 55, 0.38);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.35), 0 0 16px -3px rgba(212, 175, 55, 0.12);
+        }
+
+        .quest-card.completed {
+            border-color: rgba(34, 197, 94, 0.25);
+            opacity: 0.65;
+        }
+
+        .quest-card.completed .quest-title {
+            text-decoration: line-through;
+            color: #94a3b8;
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.2);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(212, 175, 55, 0.4);
+        }
+
+        .ambient-glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.07) 0%, rgba(14, 18, 23, 0) 70%);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .checkbox-container input:checked ~ .checkmark {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border-color: #34d399;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+        }
+
+        .checkbox-container input:checked ~ .checkmark svg {
+            display: block;
+        }
+    </style>
+</head>
+<body class="min-h-screen selection:bg-amber-500/20 selection:text-amber-200 flex flex-col relative pb-16">
+
+    <div class="ambient-glow top-[-150px] left-[-150px]"></div>
+    <div class="ambient-glow bottom-[-150px] right-[-100px] !bg-[radial-gradient(circle,rgba(212,175,55,0.06)_0%,rgba(14,18,23,0)_70%)]"></div>
+
+    <header class="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-6 pb-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
+            <div>
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-700/10 border border-amber-500/30 flex items-center justify-center text-amber-300 shadow-inner">
+                        <i data-lucide="compass" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl sm:text-3xl font-bold font-rpg tracking-wider text-slate-100 flex items-center gap-2">
+                            THE PORTAL <span class="text-xs tracking-normal font-sans px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-amber-300 font-semibold">Weekly HUD</span>
+                        </h1>
+                        <p class="text-xs text-slate-400" id="current-date-display">Calm Workspace • Syncs with Calendar & Personal Quests</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Adventurer Status and Controls -->
+            <div class="flex flex-wrap items-center gap-3">
+                <!-- Level & EXP HUD -->
+                <div class="flex items-center gap-3 px-3.5 py-2 rounded-xl bg-slate-900/80 border border-slate-800">
+                    <div class="flex flex-col">
+                        <div class="flex items-center justify-between gap-4 text-xs">
+                            <span class="text-amber-400 font-semibold font-rpg flex items-center gap-1">
+                                <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> <span id="level-label">Lv. 1 Seeker</span>
+                            </span>
+                            <span class="text-slate-400 text-[11px]" id="xp-label">0 / 150 XP</span>
+                        </div>
+                        <div class="w-36 sm:w-44 h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1.5">
+                            <div id="xp-progress-bar" class="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-700" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Google Tasks Quick Indicator -->
+                <button id="google-tasks-status-btn" class="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-400 hover:text-amber-300 transition-colors" title="Google Account Live Sync Status">
+                    <i data-lucide="cloud" class="w-3.5 h-3.5 text-sky-400"></i>
+                    <span id="google-tasks-status-label" class="text-[11px]">Google Sync Off</span>
+                </button>
+
+                <!-- Calendars Quick Indicator -->
+                <button id="calendars-status-btn" class="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-400 hover:text-amber-300 transition-colors" title="Manage Connected Calendars">
+                    <i data-lucide="calendar" class="w-3.5 h-3.5 text-amber-400"></i>
+                    <span id="calendars-count-badge" class="text-[11px]">1 Calendar</span>
+                </button>
+
+                <!-- Sync Countdown & Auto-Refresh -->
+                <div class="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs text-slate-300">
+                    <span class="relative flex h-2 w-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span id="refresh-indicator" class="font-mono text-[11px] text-slate-400">Syncs in 15:00</span>
+                    <button id="manual-refresh-btn" title="Refresh Now" class="hover:text-amber-400 transition-colors p-1">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+
+                <!-- Sound toggle -->
+                <button id="sound-toggle-btn" class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-amber-300 transition-colors" title="Toggle Calm Soundscape">
+                    <i data-lucide="volume-2" id="sound-icon" class="w-4 h-4"></i>
+                </button>
+
+                <!-- Quick Settings Modal Trigger -->
+                <button id="open-settings-btn" class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-amber-300 transition-colors" title="Calendar & Quest Settings">
+                    <i data-lucide="settings" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="mt-4 flex items-center justify-between gap-2 overflow-x-auto pb-1">
+            <div id="day-pills-container" class="flex items-center gap-1.5 sm:gap-2">
+                <!-- Sunday-first Day buttons generated here -->
+            </div>
+            
+            <button id="add-quest-trigger-btn" class="flex-shrink-0 flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all shadow-sm active:scale-95">
+                <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+                <span>Add Quest</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 flex-1 flex flex-col md:grid md:grid-cols-12 gap-6 mt-2">
+        
+        <!-- Left Panel: Leon's Report & Main Campaign Objectives -->
+        <section class="md:col-span-7 lg:col-span-8 flex flex-col gap-4">
+            
+            <!-- Leon's Report Banner -->
+            <div id="daily-brief-container" class="quest-card rounded-2xl p-4 sm:p-5 border border-amber-500/30 bg-gradient-to-br from-slate-900/90 via-slate-900/80 to-amber-950/20 shadow-lg relative overflow-hidden">
+                <div class="absolute -right-10 -bottom-10 w-44 h-44 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+                <div class="flex items-start justify-between gap-3 relative z-10">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shadow-inner">
+                            <i data-lucide="compass" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 class="font-rpg text-sm sm:text-base font-bold text-slate-100 tracking-wide uppercase">Leon's Report</h3>
+                                <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300" id="brief-day-tag">Today</span>
+                            </div>
+                            <p class="text-[11px] text-slate-400">Tactical briefing & timeline breakdown for the day ahead.</p>
+                        </div>
+                    </div>
+
+                    <button id="generate-ai-brief-btn" class="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-amber-500/20 text-slate-300 hover:text-amber-200 border border-slate-700/80 hover:border-amber-500/40 text-[11px] font-medium transition-all shadow-sm active:scale-95" title="Generate Oracle Guidance">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
+                        <span id="ai-brief-btn-label">Oracle Insight</span>
+                    </button>
+                </div>
+
+                <!-- Tactical Metrics Grid -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3.5 pt-3 border-t border-slate-800/80 text-xs relative z-10">
+                    <div class="bg-slate-950/50 border border-slate-800/70 rounded-xl p-2.5">
+                        <span class="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Timeline Span</span>
+                        <span class="text-xs font-semibold text-slate-200 mt-0.5 block truncate" id="brief-timeline-span">Untimed</span>
+                    </div>
+                    <div class="bg-slate-950/50 border border-slate-800/70 rounded-xl p-2.5">
+                        <span class="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Focus vs Talks</span>
+                        <span class="text-xs font-semibold text-slate-200 mt-0.5 block" id="brief-focus-ratio">0 Focus • 0 Meets</span>
+                    </div>
+                    <div class="bg-slate-950/50 border border-slate-800/70 rounded-xl p-2.5">
+                        <span class="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Active Quests</span>
+                        <span class="text-xs font-semibold text-sky-300 mt-0.5 block" id="brief-pending-count">0 Remaining</span>
+                    </div>
+                    <div class="bg-slate-950/50 border border-slate-800/70 rounded-xl p-2.5">
+                        <span class="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">EXP Bounty</span>
+                        <span class="text-xs font-semibold text-emerald-300 mt-0.5 block" id="brief-xp-bounty">+0 XP on Table</span>
+                    </div>
+                </div>
+
+                <!-- Strategic Summary Narrative -->
+                <div class="mt-3 bg-slate-950/40 rounded-xl p-3 border border-slate-800/60 relative z-10 text-[11px] leading-relaxed text-slate-300">
+                    <p id="brief-narrative-text" class="text-slate-300">
+                        Gathering reconnaissance for this day...
+                    </p>
+                    <div id="ai-oracle-container" class="hidden mt-2.5 pt-2.5 border-t border-amber-500/20 text-amber-200/90 italic flex items-start gap-2">
+                        <i data-lucide="flame" class="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5"></i>
+                        <span id="ai-oracle-text"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Calendar Connection Alert Banner (Shown when no feed is configured) -->
+            <div id="calendar-connect-banner" class="hidden quest-card rounded-2xl p-4 border border-amber-500/40 bg-gradient-to-r from-amber-950/30 to-slate-900/80">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-start gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0 mt-0.5">
+                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-semibold text-slate-100 flex items-center gap-1.5">
+                                Connect Your Calendar to Sync Main Objectives
+                            </h4>
+                            <p class="text-[11px] text-slate-400 mt-0.5">
+                                Add your Google Calendar, Outlook, or Apple Calendar link to automatically populate your campaign.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <button id="banner-connect-cal-btn" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold transition-all shadow-sm">
+                            Connect Calendar
+                        </button>
+                        <button id="banner-load-sample-btn" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors">
+                            Load Demo
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section Title and View Mode Toggle -->
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]"></span>
+                    <h2 class="font-rpg text-base sm:text-lg font-bold text-slate-200">Main Campaign Objectives</h2>
+                    <span class="text-[11px] font-medium text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-md" id="main-count-badge">0 Active</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="quick-live-sync-btn" class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] font-medium transition-all" title="Sync live with Google Calendar">
+                        <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                        <span>Live Sync</span>
+                    </button>
+                    <div class="flex items-center bg-slate-900/90 border border-slate-800 rounded-xl p-0.5 text-xs">
+                        <button id="view-mode-grouped-btn" class="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all bg-amber-500/20 text-amber-300 shadow-sm" title="Show Today, Tomorrow & Later">
+                            Today / Tomorrow / Later
+                        </button>
+                        <button id="view-mode-day-btn" class="px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-400 hover:text-slate-200 transition-all" title="View selected day only">
+                            Day View
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-xs text-slate-400 -mt-2">Core milestones organized into Today, Tomorrow, and Later in the campaign.</p>
+
+            <!-- Main Objectives Grouped Container -->
+            <div id="main-objectives-list" class="space-y-5 min-h-[140px]">
+                <!-- Dynamically populated -->
+            </div>
+
+            <!-- Weekly Momentum Card -->
+            <div class="quest-card rounded-2xl p-4 border border-slate-800/80 mt-2">
+                <div class="flex items-center justify-between text-xs mb-2">
+                    <span class="font-medium text-slate-300 flex items-center gap-1.5">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
+                        Weekly Objective Completion
+                    </span>
+                    <span id="weekly-stat-ratio" class="font-mono text-amber-300">0/0 Completed (0%)</span>
+                </div>
+                <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
+                    <div id="weekly-completion-bar" class="bg-gradient-to-r from-blue-500 via-amber-400 to-emerald-400 h-full w-0 transition-all duration-500"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Panel: Side Quests (To-Do's & Google Tasks) -->
+        <section class="md:col-span-5 lg:col-span-4 flex flex-col gap-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.6)]"></span>
+                    <h2 class="font-rpg text-base sm:text-lg font-bold text-slate-200">Side Quests</h2>
+                    <span class="text-[11px] font-medium text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-md" id="side-count-badge">0 Tasks</span>
+                </div>
+                <span class="text-[11px] text-sky-400/90 font-medium">+20 XP each</span>
+            </div>
+            <p class="text-xs text-slate-400 -mt-2">Micro-missions, daily routines, habits, and tasks you can conquer anytime.</p>
+
+            <!-- Side Quests List -->
+            <div id="side-quests-list" class="space-y-2.5 min-h-[180px]">
+                <!-- Dynamically populated -->
+            </div>
+
+            <!-- Enhanced Quick Add Widget with Google Tasks Push -->
+            <div class="quest-card rounded-2xl p-3.5 border border-slate-800/80 bg-slate-900/85">
+                <form id="quick-sidequest-form" class="space-y-2">
+                    <div class="flex items-center gap-2">
+                        <input 
+                            type="text" 
+                            id="quick-task-input" 
+                            placeholder="Log new side quest (e.g. review design draft)..." 
+                            class="bg-slate-950/60 border border-slate-800/80 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500/50 w-full px-3 py-2"
+                            required
+                        >
+                        <button type="submit" class="bg-gradient-to-r from-sky-500/20 to-sky-600/30 hover:from-sky-500/30 hover:to-sky-600/40 text-sky-200 px-3 py-2 rounded-xl border border-sky-500/40 transition-all font-medium text-xs flex items-center gap-1.5 flex-shrink-0 active:scale-95 shadow-sm">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            <span class="hidden sm:inline">Inscribe</span>
+                        </button>
+                    </div>
+
+                    <div class="flex items-center justify-between gap-2 pt-1">
+                        <div class="flex items-center gap-2">
+                            <select id="quick-category-select" class="bg-slate-950/70 border border-slate-800 text-[11px] text-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500/50">
+                                <option value="Focus">Focus</option>
+                                <option value="Habit">Habit</option>
+                                <option value="Errand">Errand</option>
+                                <option value="Health">Health</option>
+                            </select>
+
+                            <label class="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer hover:text-slate-200 transition-colors select-none">
+                                <input type="checkbox" id="sync-new-to-gtasks" class="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-0 w-3.5 h-3.5">
+                                <span class="flex items-center gap-1"><i data-lucide="cloud-upload" class="w-3 h-3 text-sky-400"></i> Push to Google Tasks</span>
+                            </label>
+                        </div>
+
+                        <span class="text-[10px] text-slate-500 font-mono">+20 XP</span>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Lore Box -->
+            <div class="rounded-2xl p-3.5 bg-gradient-to-b from-slate-900/70 to-slate-950/70 border border-slate-800/60 text-xs">
+                <div class="flex items-center gap-2 text-amber-300/80 mb-1 font-rpg text-[11px]">
+                    <i data-lucide="scroll" class="w-3.5 h-3.5"></i>
+                    <span>PORTAL RULE OF CALM</span>
+                </div>
+                <p id="tavern-wisdom" class="text-slate-400 italic text-[11px] leading-relaxed">
+                    "When the winds change during the week, an adventurer does not fight the tempest; they adjust their compass and reprioritize their quests."
+                </p>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="quest-card w-full max-w-lg rounded-2xl border border-slate-700 p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button id="close-settings-btn" class="absolute top-5 right-5 text-slate-400 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+
+            <div class="flex items-center gap-2.5 mb-5">
+                <div class="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-300">
+                    <i data-lucide="sliders" class="w-4 h-4"></i>
+                </div>
+                <div>
+                    <h3 class="font-rpg text-lg font-bold text-slate-100">The Portal Configuration</h3>
+                    <p class="text-xs text-slate-400">Connect your calendar & Google Tasks</p>
+                </div>
+            </div>
+
+            <div class="space-y-5 text-xs">
+                <!-- Direct Google Account Live Sync Section (Primary) -->
+                <div class="p-4 rounded-xl bg-gradient-to-br from-amber-950/40 via-slate-900 to-sky-950/40 border border-amber-500/40 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <div class="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
+                                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-slate-100 text-xs block">Real-Time Google Sync</span>
+                                <span class="text-[10px] text-slate-400">Live Calendar &amp; Tasks directly from Google</span>
+                            </div>
+                        </div>
+                        <span id="gtasks-connection-badge" class="px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700">Disconnected</span>
+                    </div>
+
+                    <p class="text-[11px] text-slate-300 leading-relaxed">
+                        Eliminates duplicate and stale events by querying Google Calendar in real time. Google expands your recurring meetings server-side for this week only.
+                    </p>
+
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1 font-medium">Google OAuth Client ID</label>
+                        <input 
+                            type="text" 
+                            id="setting-gtasks-client-id" 
+                            placeholder="your-client-id.apps.googleusercontent.com" 
+                            class="w-full bg-slate-950/80 border border-slate-700 rounded-xl p-2 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 font-mono text-[11px]"
+                        >
+                    </div>
+
+                    <div class="flex items-center gap-2 pt-1">
+                        <button type="button" id="gtasks-connect-btn" class="flex-1 py-2 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-semibold rounded-xl text-center transition-all shadow text-xs flex items-center justify-center gap-1.5">
+                            <i data-lucide="cloud-lightning" class="w-4 h-4"></i>
+                            <span id="gtasks-connect-btn-label">Connect Google Account</span>
+                        </button>
+                        <button type="button" id="sync-gcalendar-api-btn" class="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition-colors text-xs flex items-center gap-1.5" title="Fetch live events now">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-amber-400"></i>
+                            <span>Fetch Now</span>
+                        </button>
+                    </div>
+
+                    <div class="p-2.5 bg-slate-950/60 rounded-xl border border-slate-800 text-[10px] text-slate-400 space-y-1">
+                        <div class="flex items-center gap-1 text-amber-300 font-medium">
+                            <i data-lucide="info" class="w-3 h-3"></i>
+                            <span>Required Google Cloud Console setup:</span>
+                        </div>
+                        <ol class="list-decimal pl-4 space-y-0.5 text-slate-400">
+                            <li>Under <strong>APIs &amp; Services &gt; Library</strong>, enable <strong>Google Calendar API</strong> and <strong>Google Tasks API</strong>.</li>
+                            <li>Under <strong>OAuth consent screen &gt; Test users</strong>, ensure your Gmail address is added.</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Sync Interval -->
+                <div>
+                    <label class="block font-medium text-slate-300 mb-1.5 flex items-center justify-between">
+                        <span>Auto-Refresh Cycle</span>
+                        <span class="text-amber-400 font-mono text-[11px]" id="current-interval-display">Every 15 min</span>
+                    </label>
+                    <select id="setting-refresh-interval" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-amber-500">
+                        <option value="5">Every 5 minutes (Intense day)</option>
+                        <option value="15" selected>Every 15 minutes (Balanced rhythm)</option>
+                        <option value="30">Every 30 minutes (Calm deep work)</option>
+                        <option value="60">Every 1 hour (Zen sanctuary)</option>
+                    </select>
+                </div>
+
+                <!-- Multi-Calendar Feed Manager (ICS URLs) -->
+                <div class="p-3.5 rounded-xl bg-slate-950/70 border border-amber-500/30">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-medium text-slate-200 flex items-center gap-1.5">
+                            <i data-lucide="calendars" class="w-4 h-4 text-amber-400"></i>
+                            Connected Calendars &amp; Feeds (Optional iCal URLs)
+                        </span>
+                        <button type="button" id="add-calendar-feed-row-btn" class="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-semibold transition-all">
+                            <i data-lucide="plus" class="w-3 h-3"></i> Add Feed
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mb-3">If not using direct Google Sync, you can subscribe via secret iCal links.</p>
+
+                    <!-- Dynamic List of Calendar Feeds -->
+                    <div id="calendar-feeds-list" class="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Fallback Options (Offline Tasks & File Import) -->
+                <div class="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 space-y-2.5">
+                    <span class="font-medium text-slate-300 text-xs block">Offline Fallbacks &amp; Demos</span>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" id="gtasks-sample-btn" class="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-colors text-[11px]">
+                            Load Sample Tasks
+                        </button>
+                        <button type="button" id="load-sample-events-btn" class="py-1.5 px-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl text-amber-300 transition-colors text-[11px]">
+                            Load Demo Week
+                        </button>
+                    </div>
+                    <div class="pt-1 flex items-center gap-2">
+                        <input type="file" id="setting-gtasks-json-file" accept=".json" class="hidden">
+                        <button type="button" onclick="document.getElementById('setting-gtasks-json-file').click()" class="flex-1 py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-xl border border-slate-800 text-center transition-colors text-[11px]">
+                            Import Tasks (.json)
+                        </button>
+
+                        <input type="file" id="setting-ics-file" accept=".ics" class="hidden">
+                        <button type="button" onclick="document.getElementById('setting-ics-file').click()" class="flex-1 py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-xl border border-slate-800 text-center transition-colors text-[11px]">
+                            Import Calendar (.ics)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Instant Paste Fallback for blocked CORS -->
+                <div class="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+                            <i data-lucide="clipboard-paste" class="w-3.5 h-3.5 text-amber-400"></i> Direct Paste Fallback
+                        </span>
+                    </div>
+                    <p class="text-[10px] text-slate-400">
+                        Paste raw <code>BEGIN:VCALENDAR...</code> text if offline or blocked:
+                    </p>
+                    <textarea id="raw-ics-input" rows="2" placeholder="Paste BEGIN:VCALENDAR... text here" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-[10px] font-mono text-slate-300 focus:outline-none focus:border-amber-500"></textarea>
+                    <button type="button" id="apply-raw-ics-btn" class="w-full py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-[11px] font-medium transition-colors">
+                        Inscribe Events From Pasted Calendar
+                    </button>
+                </div>
+
+                <!-- Modal Actions -->
+                <div class="flex items-center justify-between pt-4 border-t border-slate-800">
+                    <button type="button" id="reset-data-btn" class="text-rose-400 hover:text-rose-300 text-[11px] transition-colors">
+                        Clear All Data
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="document.getElementById('settings-modal').classList.add('hidden')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300">
+                            Cancel
+                        </button>
+                        <button type="button" id="save-settings-btn" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold shadow-md">
+                            Save &amp; Apply Sync
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detailed Quest Creation Modal -->
+    <div id="quest-modal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="quest-card w-full max-w-md rounded-2xl border border-slate-700 p-6 shadow-2xl relative">
+            <button id="close-quest-modal-btn" class="absolute top-5 right-5 text-slate-400 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+
+            <h3 class="font-rpg text-lg font-bold text-slate-100 mb-1">Draft New Quest</h3>
+            <p class="text-xs text-slate-400 mb-4">Add a campaign objective or side quest.</p>
+
+            <form id="detailed-quest-form" class="space-y-3.5 text-xs">
+                <div>
+                    <label class="block font-medium text-slate-300 mb-1">Quest Title</label>
+                    <input type="text" id="quest-title" placeholder="Objective name..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-amber-500" required>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-medium text-slate-300 mb-1">Quest Tier</label>
+                        <select id="quest-type" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-amber-500">
+                            <option value="main">Main Objective (+50 XP)</option>
+                            <option value="side">Side Quest (+20 XP)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-300 mb-1">Assigned Day</label>
+                        <select id="quest-day" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-amber-500">
+                            <!-- Injected by script -->
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-medium text-slate-300 mb-1">Time (Optional)</label>
+                        <input type="time" id="quest-time" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-300 mb-1">Category</label>
+                        <select id="quest-category" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-amber-500">
+                            <option value="Focus">Focus</option>
+                            <option value="Meeting">Meeting</option>
+                            <option value="Habit">Habit</option>
+                            <option value="Errand">Errand</option>
+                            <option value="Health">Health</option>
+                            <option value="Review">Review</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-medium text-slate-300 mb-1">Notes / Tactical Details</label>
+                    <textarea id="quest-notes" rows="2" placeholder="Milestone deliverables or context..." class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-amber-500"></textarea>
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-2">
+                    <button type="button" id="cancel-quest-btn" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300">Cancel</button>
+                    <button type="submit" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold shadow-md">Inscribe Quest</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-sm"></div>
+
+    <script>
+        let chimeSynth = null;
+        let audioEnabled = true;
+
+        function initAudio() {
+            if (!chimeSynth && window.Tone) {
+                try {
+                    chimeSynth = new Tone.PolySynth(Tone.Synth, {
+                        oscillator: { type: 'sine' },
+                        envelope: { attack: 0.02, decay: 0.8, sustain: 0.1, release: 1.2 }
+                    }).toDestination();
+                    chimeSynth.volume.value = -12;
+                } catch (e) {
+                    console.warn("Audio init warning:", e);
+                }
+            }
+        }
+
+        function playQuestCompleteSound() {
+            if (!audioEnabled) return;
+            try {
+                if (window.Tone && Tone.context.state !== 'running') {
+                    Tone.start();
+                }
+                initAudio();
+                if (chimeSynth) {
+                    const now = Tone.now();
+                    chimeSynth.triggerAttackRelease("E5", "8n", now);
+                    chimeSynth.triggerAttackRelease("B5", "8n", now + 0.08);
+                    chimeSynth.triggerAttackRelease("E6", "4n", now + 0.16);
+                }
+            } catch (err) {}
+        }
+
+        function playLevelUpSound() {
+            if (!audioEnabled) return;
+            try {
+                if (window.Tone && Tone.context.state !== 'running') {
+                    Tone.start();
+                }
+                initAudio();
+                if (chimeSynth) {
+                    const now = Tone.now();
+                    chimeSynth.triggerAttackRelease("G4", "8n", now);
+                    chimeSynth.triggerAttackRelease("C5", "8n", now + 0.1);
+                    chimeSynth.triggerAttackRelease("E5", "8n", now + 0.2);
+                    chimeSynth.triggerAttackRelease("G5", "4n", now + 0.3);
+                    chimeSynth.triggerAttackRelease("C6", "2n", now + 0.45);
+                }
+            } catch (err) {}
+        }
+
+        const APP_STORAGE_KEY = 'the_portal_data_v1';
+        const SETTINGS_STORAGE_KEY = 'the_portal_settings_v1';
+
+        const defaultSettings = {
+            refreshIntervalMinutes: 15,
+            icalUrl: '',
+            calendarFeeds: [
+                {
+                    id: 'cal-default',
+                    name: 'Primary Calendar',
+                    url: '',
+                    color: 'amber'
+                }
+            ],
+            soundEnabled: true,
+            gtasksClientId: '',
+            gtasksConnected: false
+        };
+
+        let appSettings = { ...defaultSettings };
+        let gtasksAccessToken = null;
+        let tokenClient = null;
+        let defaultGTasksListId = '@default';
+
+        let appState = {
+            xp: 220,
+            level: 1,
+            selectedDayIndex: new Date().getDay(),
+            mainObjectivesViewMode: 'grouped',
+            mainObjectives: [],
+            sideQuests: []
+        };
+
+        const sampleCalendarData = [
+            {
+                id: 'cal-0',
+                title: 'Weekly Sanctuary Reset & Planning',
+                type: 'main',
+                dayIndex: 0,
+                time: '18:00',
+                endTime: '19:00',
+                category: 'Review',
+                notes: 'Set intentions for the week ahead and clarify priority quests.',
+                completed: false,
+                xp: 40,
+                isFromCalendar: true
+            },
+            {
+                id: 'cal-1',
+                title: 'Sprint Planning & Realm Strategy',
+                type: 'main',
+                dayIndex: 1,
+                time: '09:30',
+                endTime: '10:30',
+                category: 'Meeting',
+                notes: 'Review team backlog and key milestones.',
+                completed: true,
+                xp: 50,
+                isFromCalendar: true
+            },
+            {
+                id: 'cal-2',
+                title: 'Architecture Review: Micro-services',
+                type: 'main',
+                dayIndex: 1,
+                time: '14:00',
+                endTime: '15:15',
+                category: 'Focus',
+                notes: 'Evaluate database caching patterns.',
+                completed: false,
+                xp: 60,
+                isFromCalendar: true
+            },
+            {
+                id: 'cal-3',
+                title: 'Team Sync & Project Guild Review',
+                type: 'main',
+                dayIndex: 2,
+                time: '11:00',
+                endTime: '11:45',
+                category: 'Meeting',
+                notes: 'Catch up on blockages.',
+                completed: false,
+                xp: 40,
+                isFromCalendar: true
+            },
+            {
+                id: 'cal-4',
+                title: 'Deep Work: Core Deliverable Sprint',
+                type: 'main',
+                dayIndex: 3,
+                time: '13:00',
+                endTime: '16:00',
+                category: 'Focus',
+                notes: 'Protect focus window. No meetings scheduled.',
+                completed: false,
+                xp: 90,
+                isFromCalendar: true
+            },
+            {
+                id: 'cal-5',
+                title: 'Client Stakeholder Demo',
+                type: 'main',
+                dayIndex: 4,
+                time: '15:30',
+                endTime: '16:30',
+                category: 'Meeting',
+                notes: 'Showcase alpha prototype build.',
+                completed: false,
+                xp: 75,
+                isFromCalendar: true
+            },
+            {
+                id: 'cal-6',
+                title: 'Weekly Retrospective & Horizon Alignment',
+                type: 'main',
+                dayIndex: 5,
+                time: '16:00',
+                endTime: '17:00',
+                category: 'Review',
+                notes: 'Reflect on accomplishments and clear inbox.',
+                completed: false,
+                xp: 50,
+                isFromCalendar: true
+            }
+        ];
+
+        const sampleSideQuests = [
+            {
+                id: 'sq-1',
+                title: 'Hydrate: Drink 1L of enchanted spring water',
+                type: 'side',
+                dayIndex: new Date().getDay(),
+                category: 'Health',
+                completed: true,
+                xp: 20
+            },
+            {
+                id: 'sq-2',
+                title: '15-minute sanctuary stroll away from screens',
+                type: 'side',
+                dayIndex: new Date().getDay(),
+                category: 'Habit',
+                completed: false,
+                xp: 20
+            },
+            {
+                id: 'sq-3',
+                title: 'Tidy physical desktop work-altar',
+                type: 'side',
+                dayIndex: new Date().getDay(),
+                category: 'Focus',
+                completed: false,
+                xp: 20
+            },
+            {
+                id: 'sq-4',
+                title: 'Archive 20 stale email scrolls',
+                type: 'side',
+                dayIndex: new Date().getDay(),
+                category: 'Errand',
+                completed: false,
+                xp: 20
+            }
+        ];
+
+        function loadSavedData() {
+            try {
+                const storedSettings = localStorage.getItem(SETTINGS_STORAGE_KEY);
+                if (storedSettings) {
+                    const parsed = JSON.parse(storedSettings);
+                    appSettings = { ...defaultSettings, ...parsed };
+                    
+                    if (appSettings.icalUrl && (!appSettings.calendarFeeds || appSettings.calendarFeeds.length === 0)) {
+                        appSettings.calendarFeeds = [{
+                            id: 'cal-primary',
+                            name: 'Primary Calendar',
+                            url: appSettings.icalUrl,
+                            color: 'amber'
+                        }];
+                    } else if (!appSettings.calendarFeeds || appSettings.calendarFeeds.length === 0) {
+                        appSettings.calendarFeeds = [{
+                            id: 'cal-primary',
+                            name: 'Primary Calendar',
+                            url: '',
+                            color: 'amber'
+                        }];
+                    }
+                }
+                audioEnabled = appSettings.soundEnabled !== false;
+
+                const storedData = localStorage.getItem(APP_STORAGE_KEY);
+                if (storedData) {
+                    const parsed = JSON.parse(storedData);
+                    appState.xp = typeof parsed.xp === 'number' ? parsed.xp : 220;
+                    appState.level = calculateLevel(appState.xp);
+                    appState.mainObjectives = parsed.mainObjectives || sampleCalendarData;
+                    appState.sideQuests = parsed.sideQuests || sampleSideQuests;
+                } else {
+                    appState.mainObjectives = sampleCalendarData;
+                    appState.sideQuests = sampleSideQuests;
+                    saveData();
+                }
+            } catch (e) {
+                console.error("Error loading stored data, using fallback", e);
+                appState.mainObjectives = sampleCalendarData;
+                appState.sideQuests = sampleSideQuests;
+            }
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem(APP_STORAGE_KEY, JSON.stringify({
+                    xp: appState.xp,
+                    mainObjectives: appState.mainObjectives,
+                    sideQuests: appState.sideQuests
+                }));
+                localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(appSettings));
+            } catch (e) {
+                console.error("Failed to save to local storage", e);
+            }
+        }
+
+        function calculateLevel(totalXP) {
+            let lvl = 1;
+            let acc = 150;
+            while (totalXP >= acc) {
+                lvl++;
+                acc += (lvl * 150);
+            }
+            return lvl;
+        }
+
+        function updateXPDisplay() {
+            const currentLevel = calculateLevel(appState.xp);
+            let prevThreshold = 0;
+            let currentThreshold = 150;
+            
+            for (let i = 1; i < currentLevel; i++) {
+                prevThreshold += (i * 150);
+            }
+            currentThreshold = prevThreshold + (currentLevel * 150);
+
+            const xpIntoCurrentLevel = appState.xp - prevThreshold;
+            const xpNeededForLevel = currentThreshold - prevThreshold;
+            const percent = Math.min(100, Math.max(0, (xpIntoCurrentLevel / xpNeededForLevel) * 100));
+
+            const levelNames = ["Seeker", "Chronicler", "Wayfarer", "Sage", "Archon", "Zen Master"];
+            const titleName = levelNames[Math.min(currentLevel - 1, levelNames.length - 1)];
+
+            const levelEl = document.getElementById('level-label');
+            const xpEl = document.getElementById('xp-label');
+            const barEl = document.getElementById('xp-progress-bar');
+
+            if (levelEl) levelEl.textContent = `Lv. ${currentLevel} ${titleName}`;
+            if (xpEl) xpEl.textContent = `${xpIntoCurrentLevel} / ${xpNeededForLevel} XP`;
+            if (barEl) barEl.style.width = `${percent}%`;
+
+            const allItems = [...appState.mainObjectives, ...appState.sideQuests];
+            if (allItems.length > 0) {
+                const completedCount = allItems.filter(i => i.completed).length;
+                const ratio = Math.round((completedCount / allItems.length) * 100);
+                const statRatioEl = document.getElementById('weekly-stat-ratio');
+                const completionBar = document.getElementById('weekly-completion-bar');
+                if (statRatioEl) statRatioEl.textContent = `${completedCount}/${allItems.length} Completed (${ratio}%)`;
+                if (completionBar) completionBar.style.width = `${ratio}%`;
+            }
+        }
+
+        function awardXP(amount) {
+            const oldLevel = calculateLevel(appState.xp);
+            appState.xp += amount;
+            const newLevel = calculateLevel(appState.xp);
+            
+            saveData();
+            updateXPDisplay();
+
+            if (newLevel > oldLevel) {
+                playLevelUpSound();
+                showToast(`🌟 Level Up! You achieved Level ${newLevel}!`, 'gold');
+            } else {
+                playQuestCompleteSound();
+                showToast(`+${amount} XP Gained!`, 'emerald');
+            }
+        }
+
+        function deductXP(amount) {
+            appState.xp = Math.max(0, appState.xp - amount);
+            saveData();
+            updateXPDisplay();
+        }
+
+        const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+        function getCurrentWeekDates() {
+            const today = new Date();
+            const currentDay = today.getDay();
+            
+            const sunday = new Date(today);
+            sunday.setDate(today.getDate() - currentDay);
+            sunday.setHours(0, 0, 0, 0);
+
+            const dates = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(sunday);
+                d.setDate(sunday.getDate() + i);
+                dates.push(d);
+            }
+            return dates;
+        }
+
+        function renderDayPills() {
+            const container = document.getElementById('day-pills-container');
+            if (!container) return;
+            container.innerHTML = '';
+            const weekDates = getCurrentWeekDates();
+            const todayDate = new Date().toDateString();
+
+            SHORT_DAYS.forEach((shortName, index) => {
+                const dateObj = weekDates[index];
+                const isSelected = appState.selectedDayIndex === index;
+                const isToday = dateObj.toDateString() === todayDate;
+                
+                const dayMain = appState.mainObjectives.filter(o => o.dayIndex === index && !o.completed).length;
+                const daySide = appState.sideQuests.filter(s => s.dayIndex === index && !s.completed).length;
+                const pendingTotal = dayMain + daySide;
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `flex flex-col items-center px-3 py-1.5 rounded-xl border text-xs transition-all relative ${
+                    isSelected 
+                        ? 'bg-amber-500/20 border-amber-500/60 text-amber-200 shadow-md ring-1 ring-amber-500/30' 
+                        : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                }`;
+
+                btn.innerHTML = `
+                    <div class="flex items-center gap-1 font-medium">
+                        <span>${shortName}</span>
+                        ${isToday ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>' : ''}
+                    </div>
+                    <span class="text-[10px] opacity-75 font-mono">${dateObj.getDate()}</span>
+                    ${pendingTotal > 0 ? `
+                        <span class="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full text-[9px] bg-sky-500/80 text-white font-mono shadow">
+                            ${pendingTotal}
+                        </span>` : ''
+                    }
+                `;
+
+                btn.addEventListener('click', () => {
+                    appState.selectedDayIndex = index;
+                    renderDayPills();
+                    renderObjectives();
+                });
+
+                container.appendChild(btn);
+            });
+
+            const selectedDate = weekDates[appState.selectedDayIndex];
+            const dateDisplay = document.getElementById('current-date-display');
+            if (dateDisplay) {
+                dateDisplay.textContent = `${DAYS_OF_WEEK[appState.selectedDayIndex]}, ${selectedDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+            }
+        }
+
+        function updateDailyBrief() {
+            const currentDayIndex = appState.selectedDayIndex;
+            const weekDates = getCurrentWeekDates();
+            const selectedDate = weekDates[currentDayIndex];
+            const isToday = selectedDate.toDateString() === new Date().toDateString();
+
+            const dayTag = document.getElementById('brief-day-tag');
+            if (dayTag) {
+                dayTag.textContent = isToday ? 'Today' : DAYS_OF_WEEK[currentDayIndex];
+            }
+
+            const mainForDay = appState.mainObjectives.filter(o => o.dayIndex === currentDayIndex);
+            const sideForDay = appState.sideQuests.filter(s => s.dayIndex === currentDayIndex || s.dayIndex === -1);
+
+            const pendingMain = mainForDay.filter(m => !m.completed);
+            const pendingSide = sideForDay.filter(s => !s.completed);
+            const totalPending = pendingMain.length + pendingSide.length;
+            const totalTasks = mainForDay.length + sideForDay.length;
+
+            const timedEvents = mainForDay.filter(m => m.time).sort((a, b) => a.time.localeCompare(b.time));
+            const spanEl = document.getElementById('brief-timeline-span');
+            if (spanEl) {
+                if (timedEvents.length === 0) {
+                    spanEl.textContent = 'Untimed';
+                } else if (timedEvents.length === 1) {
+                    spanEl.textContent = `${timedEvents[0].time} (${timedEvents[0].title.substring(0, 15)}...)`;
+                } else {
+                    const firstTime = timedEvents[0].time;
+                    const lastEv = timedEvents[timedEvents.length - 1];
+                    const lastTime = lastEv.endTime || lastEv.time;
+                    spanEl.textContent = `${firstTime} → ${lastTime}`;
+                }
+            }
+
+            const focusCount = mainForDay.filter(m => m.category === 'Focus').length;
+            const meetCount = mainForDay.filter(m => m.category === 'Meeting').length;
+            const focusRatioEl = document.getElementById('brief-focus-ratio');
+            if (focusRatioEl) {
+                focusRatioEl.textContent = `${focusCount} Focus • ${meetCount} Talks`;
+            }
+
+            const pendingCountEl = document.getElementById('brief-pending-count');
+            if (pendingCountEl) {
+                pendingCountEl.textContent = `${totalPending} of ${totalTasks} Incomplete`;
+            }
+
+            let xpOnTable = 0;
+            pendingMain.forEach(m => xpOnTable += (m.xp || 50));
+            pendingSide.forEach(s => xpOnTable += (s.xp || 20));
+
+            const xpBountyEl = document.getElementById('brief-xp-bounty');
+            if (xpBountyEl) {
+                xpBountyEl.textContent = `+${xpOnTable} XP Available`;
+            }
+
+            const narrativeEl = document.getElementById('brief-narrative-text');
+            if (narrativeEl) {
+                if (totalTasks === 0) {
+                    narrativeEl.innerHTML = `<span class="text-slate-400 italic">Clear horizon ahead. No campaign events or side quests logged for ${DAYS_OF_WEEK[currentDayIndex]}. Take time for peaceful reflection or inscribe a new quest.</span>`;
+                } else if (totalPending === 0) {
+                    narrativeEl.innerHTML = `<span class="text-emerald-300 font-medium">✨ All objectives and side quests cleared for ${DAYS_OF_WEEK[currentDayIndex]}! You have conquered this day's campaign. Well fought, Adventurer.</span>`;
+                } else {
+                    let summaryString = `Your agenda features <strong>${mainForDay.length} campaign milestone${mainForDay.length === 1 ? '' : 's'}</strong> and <strong>${sideForDay.length} side quest${sideForDay.length === 1 ? '' : 's'}</strong>. `;
+                    if (meetCount > 0 && focusCount > 0) {
+                        summaryString += `Balance council syncs with dedicated deep focus blocks. `;
+                    } else if (meetCount > 0) {
+                        summaryString += `Meetings dominate your agenda; protect small breathing windows in between. `;
+                    } else if (focusCount > 0) {
+                        summaryString += `The realm is quiet with dedicated deep focus windows; ideal for deep work. `;
+                    }
+
+                    if (timedEvents.length > 0) {
+                        summaryString += `First trial commences at <span class="text-amber-300 font-mono font-medium">${timedEvents[0].time}</span> (${escapeHtml(timedEvents[0].title)}).`;
+                    }
+                    narrativeEl.innerHTML = summaryString;
+                }
+            }
+
+            const oracleContainer = document.getElementById('ai-oracle-container');
+            if (oracleContainer && (!oracleContainer.dataset.day || oracleContainer.dataset.day !== String(currentDayIndex))) {
+                oracleContainer.classList.add('hidden');
+            }
+        }
+
+        async function generateAIOracleBrief() {
+            const currentDayIndex = appState.selectedDayIndex;
+            const dayName = DAYS_OF_WEEK[currentDayIndex];
+            const mainForDay = appState.mainObjectives.filter(o => o.dayIndex === currentDayIndex);
+            const sideForDay = appState.sideQuests.filter(s => s.dayIndex === currentDayIndex || s.dayIndex === -1);
+
+            const btn = document.getElementById('generate-ai-brief-btn');
+            const btnLabel = document.getElementById('ai-brief-btn-label');
+            const oracleContainer = document.getElementById('ai-oracle-container');
+            const oracleText = document.getElementById('ai-oracle-text');
+
+            if (btn) btn.disabled = true;
+            if (btnLabel) btnLabel.textContent = 'Consulting...';
+
+            const wisdomLines = [
+                "Leon's Note: Approach each quest one breath at a time. Protect your calm amidst shifted meetings.",
+                "Leon's Note: High-leverage focus requires stillness first. Begin with your main objective, then harvest the side bounties.",
+                "Leon's Note: Even the greatest knights take mindful pauses. Honor your boundaries as you navigate today's timeline.",
+                "Leon's Note: Steady pacing turns overwhelming campaigns into legendary triumphs. Take a steady breath before diving into work."
+            ];
+            const fallbackChoice = wisdomLines[Math.floor(Math.random() * wisdomLines.length)];
+
+            if (oracleContainer && oracleText) {
+                oracleText.textContent = `"${fallbackChoice}"`;
+                oracleContainer.classList.remove('hidden');
+                oracleContainer.dataset.day = String(currentDayIndex);
+                showToast("Leon's report updated", 'gold');
+            }
+
+            if (btn) btn.disabled = false;
+            if (btnLabel) btnLabel.textContent = 'Oracle Insight';
+        }
+
+        function renderObjectives() {
+            const mainContainer = document.getElementById('main-objectives-list');
+            const sideContainer = document.getElementById('side-quests-list');
+
+            if (!mainContainer || !sideContainer) return;
+
+            mainContainer.innerHTML = '';
+            sideContainer.innerHTML = '';
+
+            const currentDayIndex = appState.selectedDayIndex;
+            const todayDayIndex = new Date().getDay();
+            const tomorrowDayIndex = (todayDayIndex + 1) % 7;
+
+            const filteredSide = appState.sideQuests.filter(s => s.dayIndex === currentDayIndex || s.dayIndex === -1);
+            const sideBadge = document.getElementById('side-count-badge');
+            if (sideBadge) sideBadge.textContent = `${filteredSide.filter(s => !s.completed).length} Available`;
+
+            if (filteredSide.length === 0) {
+                sideContainer.innerHTML = `
+                    <div class="p-6 rounded-2xl border border-slate-800 text-center bg-slate-900/40">
+                        <i data-lucide="sparkles" class="w-6 h-6 text-slate-600 mx-auto mb-1 stroke-1"></i>
+                        <p class="text-xs text-slate-400">All side quests cleared for today.</p>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Log micro-tasks below or rest at the inn.</p>
+                    </div>
+                `;
+            } else {
+                filteredSide.forEach(quest => {
+                    sideContainer.appendChild(createObjectiveElement(quest, 'side'));
+                });
+            }
+
+            const mainBadge = document.getElementById('main-count-badge');
+
+            if (appState.mainObjectivesViewMode === 'day') {
+                const dayMain = appState.mainObjectives.filter(o => o.dayIndex === currentDayIndex);
+                if (mainBadge) mainBadge.textContent = `${dayMain.filter(m => !m.completed).length} Pending`;
+
+                if (dayMain.length === 0) {
+                    mainContainer.innerHTML = `
+                        <div class="quest-card rounded-2xl p-8 border border-slate-800 text-center flex flex-col items-center justify-center">
+                            <i data-lucide="feather" class="w-8 h-8 text-slate-600 mb-2 stroke-1"></i>
+                            <p class="text-sm font-medium text-slate-400">The campaign slate is clear for ${DAYS_OF_WEEK[currentDayIndex]}.</p>
+                            <p class="text-xs text-slate-500 mt-1 max-w-sm">No scheduled calendar conflicts. Take this as quiet focus time or add an objective.</p>
+                        </div>
+                    `;
+                } else {
+                    dayMain.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+                    dayMain.forEach(quest => {
+                        mainContainer.appendChild(createObjectiveElement(quest, 'main'));
+                    });
+                }
+            } else {
+                const todayObjectives = appState.mainObjectives.filter(o => o.dayIndex === todayDayIndex);
+                const tomorrowObjectives = appState.mainObjectives.filter(o => o.dayIndex === tomorrowDayIndex);
+                const laterObjectives = appState.mainObjectives.filter(o => o.dayIndex !== todayDayIndex && o.dayIndex !== tomorrowDayIndex);
+
+                const totalPendingMain = appState.mainObjectives.filter(m => !m.completed).length;
+                if (mainBadge) mainBadge.textContent = `${totalPendingMain} Active This Week`;
+
+                if (appState.mainObjectives.length === 0) {
+                    mainContainer.innerHTML = `
+                        <div class="quest-card rounded-2xl p-8 border border-slate-800 text-center flex flex-col items-center justify-center">
+                            <i data-lucide="feather" class="w-8 h-8 text-slate-600 mb-2 stroke-1"></i>
+                            <p class="text-sm font-medium text-slate-400">Your campaign log is currently empty.</p>
+                            <p class="text-xs text-slate-500 mt-1 max-w-sm">Sync your calendar feed or draft new main objectives to populate your journey.</p>
+                        </div>
+                    `;
+                } else {
+                    mainContainer.appendChild(createSectionHeader('Today', DAYS_OF_WEEK[todayDayIndex], todayObjectives, 'amber', 'compass'));
+                    if (todayObjectives.length === 0) {
+                        mainContainer.appendChild(createEmptySectionPlaceholder("No main objectives scheduled for today. Enjoy peaceful focus."));
+                    } else {
+                        todayObjectives.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+                        const groupDiv = document.createElement('div');
+                        groupDiv.className = "space-y-2.5";
+                        todayObjectives.forEach(quest => groupDiv.appendChild(createObjectiveElement(quest, 'main')));
+                        mainContainer.appendChild(groupDiv);
+                    }
+
+                    mainContainer.appendChild(createSectionHeader('Tomorrow', DAYS_OF_WEEK[tomorrowDayIndex], tomorrowObjectives, 'sky', 'calendar-days'));
+                    if (tomorrowObjectives.length === 0) {
+                        mainContainer.appendChild(createEmptySectionPlaceholder("No campaign milestones queued for tomorrow."));
+                    } else {
+                        tomorrowObjectives.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+                        const groupDiv = document.createElement('div');
+                        groupDiv.className = "space-y-2.5";
+                        tomorrowObjectives.forEach(quest => groupDiv.appendChild(createObjectiveElement(quest, 'main')));
+                        mainContainer.appendChild(groupDiv);
+                    }
+
+                    mainContainer.appendChild(createSectionHeader('Later This Week', 'Horizon Outlook', laterObjectives, 'slate', 'layers'));
+                    if (laterObjectives.length === 0) {
+                        mainContainer.appendChild(createEmptySectionPlaceholder("No further events on this week's horizon."));
+                    } else {
+                        laterObjectives.sort((a, b) => {
+                            if (a.dayIndex !== b.dayIndex) return a.dayIndex - b.dayIndex;
+                            return (a.time || '99:99').localeCompare(b.time || '99:99');
+                        });
+                        const groupDiv = document.createElement('div');
+                        groupDiv.className = "space-y-2.5";
+                        laterObjectives.forEach(quest => groupDiv.appendChild(createObjectiveElement(quest, 'main', true)));
+                        mainContainer.appendChild(groupDiv);
+                    }
+                }
+            }
+
+            if (window.lucide) lucide.createIcons();
+            updateDailyBrief();
+            updateXPDisplay();
+        }
+
+        function createSectionHeader(title, subtitle, items, colorTheme, iconName) {
+            const header = document.createElement('div');
+            header.className = "flex items-center justify-between pt-2 pb-1 border-b border-slate-800/70";
+
+            const pending = items.filter(i => !i.completed).length;
+            const completed = items.filter(i => i.completed).length;
+
+            const colorBadge = {
+                amber: 'bg-amber-500/15 border-amber-500/30 text-amber-300',
+                sky: 'bg-sky-500/15 border-sky-500/30 text-sky-300',
+                slate: 'bg-slate-800 border-slate-700 text-slate-300'
+            }[colorTheme] || 'bg-slate-800 border-slate-700 text-slate-300';
+
+            header.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <i data-lucide="${iconName}" class="w-4 h-4 text-slate-400"></i>
+                    <h3 class="font-rpg text-sm font-bold text-slate-200 tracking-wide uppercase">${title}</h3>
+                    <span class="text-[11px] text-slate-400 font-sans">• ${subtitle}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border ${colorBadge}">
+                        ${pending} active ${completed > 0 ? `• ${completed} done` : ''}
+                    </span>
+                </div>
+            `;
+            return header;
+        }
+
+        function createEmptySectionPlaceholder(text) {
+            const div = document.createElement('div');
+            div.className = "p-3 rounded-xl border border-dashed border-slate-800/80 bg-slate-950/30 text-center";
+            div.innerHTML = `<p class="text-[11px] text-slate-500 italic">${text}</p>`;
+            return div;
+        }
+
+        function createObjectiveElement(quest, type, showDayBadge = false) {
+            const card = document.createElement('div');
+            const isCompleted = !!quest.completed;
+            const isMain = type === 'main';
+
+            card.className = `quest-card rounded-2xl p-3.5 flex items-start gap-3.5 border ${
+                isCompleted ? 'completed bg-slate-900/40' : 'bg-slate-900/75'
+            }`;
+
+            const checkContainer = document.createElement('label');
+            checkContainer.className = "checkbox-container relative flex items-center justify-center cursor-pointer flex-shrink-0 mt-0.5";
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = isCompleted;
+            checkbox.className = 'sr-only peer';
+
+            const checkmark = document.createElement('div');
+            checkmark.className = `w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
+                isCompleted 
+                    ? 'bg-emerald-600 border-emerald-400 text-white shadow-[0_0_8px_rgba(16,185,129,0.4)]' 
+                    : 'border-slate-600 bg-slate-800/80 hover:border-amber-400/70'
+            }`;
+            checkmark.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 ${isCompleted ? 'block' : 'hidden'}"></i>`;
+
+            checkContainer.appendChild(checkbox);
+            checkContainer.appendChild(checkmark);
+
+            checkbox.addEventListener('change', () => {
+                toggleQuestCompletion(quest.id, checkbox.checked, quest.xp || (isMain ? 50 : 20));
+            });
+
+            const content = document.createElement('div');
+            content.className = "flex-1 min-w-0";
+
+            const catColors = {
+                'Meeting': 'border-purple-500/30 text-purple-300 bg-purple-500/10',
+                'Focus': 'border-amber-500/30 text-amber-300 bg-amber-500/10',
+                'Habit': 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10',
+                'Health': 'border-rose-500/30 text-rose-300 bg-rose-500/10',
+                'Errand': 'border-sky-500/30 text-sky-300 bg-sky-500/10',
+                'Review': 'border-indigo-500/30 text-indigo-300 bg-indigo-500/10'
+            };
+            const catClass = catColors[quest.category] || 'border-slate-700 text-slate-300 bg-slate-800';
+
+            const timeLabel = quest.time ? `${quest.time}${quest.endTime ? ' - ' + quest.endTime : ''}` : '';
+            const dayLabel = showDayBadge && quest.dayIndex !== undefined ? SHORT_DAYS[quest.dayIndex] : '';
+
+            const calBadgeColors = {
+                amber: 'border-amber-500/30 text-amber-300 bg-amber-500/10',
+                sky: 'border-sky-500/30 text-sky-300 bg-sky-500/10',
+                purple: 'border-purple-500/30 text-purple-300 bg-purple-500/10',
+                emerald: 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10',
+                rose: 'border-rose-500/30 text-rose-300 bg-rose-500/10'
+            };
+            const sourceBadgeStyle = calBadgeColors[quest.sourceColor || 'amber'] || calBadgeColors.amber;
+
+            content.innerHTML = `
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="quest-title text-sm font-medium ${isCompleted ? 'text-slate-500' : 'text-slate-100'}">${escapeHtml(quest.title)}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-shrink-0">
+                        ${dayLabel ? `
+                            <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-amber-300">
+                                ${dayLabel}
+                            </span>` : ''
+                        }
+                        ${quest.sourceName ? `
+                            <span class="text-[10px] font-medium px-2 py-0.5 rounded-full border ${sourceBadgeStyle}">
+                                ${escapeHtml(quest.sourceName)}
+                            </span>` : ''
+                        }
+                        <span class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full ${catClass}">
+                            ${quest.category || (isMain ? 'Objective' : 'Side Quest')}
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-3 mt-1.5 text-xs text-slate-400 flex-wrap">
+                    ${timeLabel ? `
+                        <span class="flex items-center gap-1 font-mono text-[11px] text-amber-300/80">
+                            <i data-lucide="clock" class="w-3 h-3"></i> ${timeLabel}
+                        </span>` : ''
+                    }
+                    ${quest.isFromCalendar ? `
+                        <span class="flex items-center gap-1 text-[11px] text-emerald-400/80">
+                            <i data-lucide="calendar" class="w-3 h-3"></i> Sync'd Event
+                        </span>` : ''
+                    }
+                    ${quest.isFromGoogleTasks ? `
+                        <span class="flex items-center gap-1 text-[11px] text-sky-400/90 font-medium">
+                            <i data-lucide="check-square" class="w-3 h-3"></i> Google Tasks
+                        </span>` : ''
+                    }
+                    <span class="font-mono text-[10px] text-slate-500">+${quest.xp || (isMain ? 50 : 20)} XP</span>
+                </div>
+
+                ${quest.notes ? `
+                    <p class="text-[11px] text-slate-400 mt-1.5 line-clamp-2 leading-relaxed bg-slate-950/40 p-2 rounded-lg border border-slate-800/40">
+                        ${escapeHtml(quest.notes)}
+                    </p>` : ''
+                }
+            `;
+
+            const actions = document.createElement('div');
+            actions.className = "flex items-center gap-1 opacity-40 hover:opacity-100 transition-opacity flex-shrink-0";
+            
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = "p-1 text-slate-400 hover:text-rose-400 transition-colors rounded-lg hover:bg-slate-800";
+            delBtn.title = "Retire Quest";
+            delBtn.innerHTML = '<i data-lucide="trash-2" class="w-3.5 h-3.5"></i>';
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteQuest(quest.id);
+            });
+            actions.appendChild(delBtn);
+
+            card.appendChild(checkContainer);
+            card.appendChild(content);
+            card.appendChild(actions);
+
+            return card;
+        }
+
+        async function fetchGoogleTasks() {
+            if (!gtasksAccessToken) return;
+            try {
+                const listsRes = await fetch('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
+                    headers: { Authorization: `Bearer ${gtasksAccessToken}` }
+                });
+                if (!listsRes.ok) {
+                    if (listsRes.status === 401) {
+                        gtasksAccessToken = null;
+                        updateGTasksUI();
+                    }
+                    throw new Error("Unable to fetch Google Task lists");
+                }
+                const listsData = await listsRes.json();
+                const taskLists = listsData.items || [];
+                if (taskLists.length > 0) defaultGTasksListId = taskLists[0].id;
+                const importedTasks = [];
+
+                for (const list of taskLists) {
+                    const tasksRes = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${list.id}/tasks?showCompleted=true&showHidden=false`, {
+                        headers: { Authorization: `Bearer ${gtasksAccessToken}` }
+                    });
+                    if (tasksRes.ok) {
+                        const tasksData = await tasksRes.json();
+                        (tasksData.items || []).forEach(task => {
+                            if (!task.title) return;
+                            
+                            let dayIdx = appState.selectedDayIndex;
+                            if (task.due) {
+                                const dueDate = new Date(task.due);
+                                if (!isNaN(dueDate.getTime())) dayIdx = dueDate.getDay();
+                            }
+
+                            importedTasks.push({
+                                id: 'gtask-' + task.id,
+                                gtaskId: task.id,
+                                taskListId: list.id,
+                                title: task.title,
+                                type: 'side',
+                                dayIndex: dayIdx,
+                                category: 'Focus',
+                                notes: task.notes || (task.due ? `Due: ${new Date(task.due).toLocaleDateString()}` : ''),
+                                completed: task.status === 'completed',
+                                xp: 20,
+                                isFromGoogleTasks: true
+                            });
+                        });
+                    }
+                }
+
+                if (importedTasks.length > 0) {
+                    const existingNonGtasks = appState.sideQuests.filter(q => !q.isFromGoogleTasks);
+                    appState.sideQuests = [...existingNonGtasks, ...importedTasks];
+                    saveData();
+                    renderDayPills();
+                    renderObjectives();
+                    showToast(`Synced ${importedTasks.length} tasks from Google!`, 'sky');
+                }
+            } catch (err) {
+                console.warn("Google Tasks fetch error:", err);
+            }
+        }
+
+        async function updateGoogleTaskStatus(taskListId, gtaskId, isCompleted) {
+            if (!gtasksAccessToken || !gtaskId) return;
+            try {
+                const listId = taskListId || defaultGTasksListId;
+                const url = `https://tasks.googleapis.com/tasks/v1/lists/${listId}/tasks/${gtaskId}`;
+                const payload = {
+                    id: gtaskId,
+                    status: isCompleted ? 'completed' : 'needsAction'
+                };
+                if (!isCompleted) payload.completed = null;
+
+                const res = await fetch(url, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${gtasksAccessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    showToast(isCompleted ? 'Checked off in Google Tasks!' : 'Restored in Google Tasks', 'sky');
+                }
+            } catch (err) {
+                console.warn("Failed to update Google Task:", err);
+            }
+        }
+
+        async function createGoogleTask(title, notes = '', dueDayIndex = null) {
+            if (!gtasksAccessToken) {
+                showToast("Connect Google Tasks first in Settings to sync remotely", "gold");
+                return null;
+            }
+
+            try {
+                const weekDates = getCurrentWeekDates();
+                const targetDate = dueDayIndex !== null && dueDayIndex >= 0 ? weekDates[dueDayIndex] : weekDates[appState.selectedDayIndex];
+                const dueISO = targetDate ? new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate())).toISOString() : undefined;
+
+                const bodyData = {
+                    title: title,
+                    notes: notes || undefined,
+                    due: dueISO
+                };
+
+                const res = await fetch(`https://tasks.googleapis.com/tasks/v1/lists/${defaultGTasksListId}/tasks`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${gtasksAccessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(bodyData)
+                });
+
+                if (res.ok) {
+                    const task = await res.json();
+                    showToast('Created task in Google Tasks!', 'sky');
+                    return {
+                        gtaskId: task.id,
+                        taskListId: defaultGTasksListId
+                    };
+                }
+            } catch (e) {
+                console.warn("Error creating task in Google Tasks", e);
+            }
+            return null;
+        }
+
+        function initGoogleAuthClient() {
+            if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) return;
+            const clientId = (appSettings.gtasksClientId || '').trim();
+            if (!clientId) return;
+
+            try {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: clientId,
+                    scope: 'https://www.googleapis.com/auth/tasks https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/calendar.readonly',
+                    callback: async (tokenResponse) => {
+                        if (tokenResponse && tokenResponse.access_token) {
+                            gtasksAccessToken = tokenResponse.access_token;
+                            appSettings.gtasksConnected = true;
+                            saveData();
+                            updateGTasksUI();
+                            await fetchGoogleTasks();
+                            await fetchGoogleCalendarEventsDirect();
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error("GIS client init error:", e);
+            }
+        }
+
+        async function fetchGoogleCalendarEventsDirect() {
+            if (!gtasksAccessToken) {
+                requestGoogleToken();
+                return;
+            }
+
+            const syncIcon = document.getElementById('manual-refresh-btn');
+            if (syncIcon) syncIcon.classList.add('animate-spin');
+
+            try {
+                const calListRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+                    headers: { Authorization: `Bearer ${gtasksAccessToken}` }
+                });
+
+                if (!calListRes.ok) {
+                    const errBody = await calListRes.json().catch(() => ({}));
+                    const errMsg = (errBody?.error?.message || '').toLowerCase();
+                    const errStatus = calListRes.status;
+
+                    if (errStatus === 401 || errStatus === 403) {
+                        if (errMsg.includes('scope') || errMsg.includes('permission') || errMsg.includes('insufficient')) {
+                            showToast("Updating permissions: Please approve Google Calendar access...", "gold");
+                            gtasksAccessToken = null;
+                            requestGoogleToken();
+                            return;
+                        } else if (errMsg.includes('not been used in project') || errMsg.includes('disabled')) {
+                            showToast("Action needed: Enable 'Google Calendar API' in Google Cloud Console", "gold");
+                            return;
+                        }
+                    }
+                    throw new Error(`Google Calendar API returned status ${errStatus}: ${errBody?.error?.message || 'Unauthorized'}`);
+                }
+
+                const calListData = await calListRes.json();
+                const calendars = calListData.items || [];
+                
+                const weekDates = getCurrentWeekDates();
+                const startOfWeek = new Date(weekDates[0]);
+                startOfWeek.setHours(0, 0, 0, 0);
+                const endOfWeek = new Date(weekDates[6]);
+                endOfWeek.setHours(23, 59, 59, 999);
+
+                const timeMin = startOfWeek.toISOString();
+                const timeMax = endOfWeek.toISOString();
+
+                const calendarPalette = ['amber', 'sky', 'purple', 'emerald', 'rose'];
+                const aggregatedEvents = [];
+
+                for (let i = 0; i < calendars.length; i++) {
+                    const cal = calendars[i];
+                    if (cal.selected === false) continue;
+
+                    const calColor = calendarPalette[i % calendarPalette.length];
+                    const eventsUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events?singleEvents=true&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&orderBy=startTime`;
+
+                    try {
+                        const evRes = await fetch(eventsUrl, {
+                            headers: { Authorization: `Bearer ${gtasksAccessToken}` }
+                        });
+
+                        if (evRes.ok) {
+                            const evData = await evRes.json();
+                            (evData.items || []).forEach((item) => {
+                                if (!item.summary || item.status === 'cancelled') return;
+
+                                const startObj = item.start?.dateTime ? new Date(item.start.dateTime) : (item.start?.date ? new Date(item.start.date + 'T00:00:00') : null);
+                                const endObj = item.end?.dateTime ? new Date(item.end.dateTime) : null;
+                                
+                                if (!startObj || isNaN(startObj.getTime())) return;
+                                if (startObj < startOfWeek || startObj > endOfWeek) return;
+
+                                const dayIdx = startObj.getDay();
+                                const formatTime = (d) => {
+                                    if (!d || isNaN(d.getTime())) return '';
+                                    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                                };
+
+                                aggregatedEvents.push({
+                                    id: 'gcal-' + item.id,
+                                    title: item.summary,
+                                    type: 'main',
+                                    dayIndex: dayIdx,
+                                    time: item.start?.dateTime ? formatTime(startObj) : '',
+                                    endTime: endObj ? formatTime(endObj) : '',
+                                    category: (item.summary.toLowerCase().includes('sync') || item.summary.toLowerCase().includes('meet')) ? 'Meeting' : 'Focus',
+                                    notes: item.description || '',
+                                    completed: false,
+                                    xp: 50,
+                                    isFromCalendar: true,
+                                    sourceName: cal.summaryOverride || cal.summary || 'Google Calendar',
+                                    sourceColor: calColor
+                                });
+                            });
+                        }
+                    } catch (err) {
+                        console.warn(`Could not sync Google Calendar [${cal.summary}]:`, err);
+                    }
+                }
+
+                if (aggregatedEvents.length > 0) {
+                    const seen = new Set();
+                    const unique = [];
+                    aggregatedEvents.forEach(ev => {
+                        const k = `${ev.dayIndex}_${ev.time}_${ev.title.trim().toLowerCase()}`;
+                        if (!seen.has(k)) {
+                            seen.add(k);
+                            unique.push(ev);
+                        }
+                    });
+
+                    const completedMap = new Map();
+                    appState.mainObjectives.forEach(o => {
+                        if (o.completed) completedMap.set(o.title, true);
+                    });
+                    unique.forEach(u => {
+                        if (completedMap.get(u.title)) u.completed = true;
+                    });
+
+                    const nonCal = appState.mainObjectives.filter(o => !o.isFromCalendar);
+                    appState.mainObjectives = [...nonCal, ...unique];
+                    saveData();
+                    renderObjectives();
+                    renderDayPills();
+                    updateCalendarBanner();
+                    showToast(`Synced ${unique.length} live events from Google Calendar!`, 'emerald');
+                } else {
+                    showToast('Google Calendar checked: No events scheduled for this week', 'slate');
+                }
+            } catch (error) {
+                console.error("Google Calendar direct API sync failed:", error);
+                showToast("Calendar sync failed: " + (error.message || 'Check connection'), "gold");
+            } finally {
+                if (syncIcon) {
+                    setTimeout(() => syncIcon.classList.remove('animate-spin'), 600);
+                }
+            }
+        }
+
+        function requestGoogleToken() {
+            const clientId = (document.getElementById('setting-gtasks-client-id')?.value || appSettings.gtasksClientId || '').trim();
+            if (!clientId) {
+                showToast('Please enter your Google OAuth Client ID in Settings', 'gold');
+                return;
+            }
+            appSettings.gtasksClientId = clientId;
+            saveData();
+
+            initGoogleAuthClient();
+            if (tokenClient) {
+                tokenClient.requestAccessToken({ prompt: 'consent' });
+            } else {
+                showToast('Google Sign-in initializing, please try again in a moment', 'slate');
+            }
+        }
+
+        function updateGTasksUI() {
+            const badge = document.getElementById('gtasks-connection-badge');
+            const connectBtnLabel = document.getElementById('gtasks-connect-btn-label');
+            const statusLabel = document.getElementById('google-tasks-status-label');
+            const isConnected = !!gtasksAccessToken;
+
+            if (isConnected) {
+                if (badge) {
+                    badge.textContent = 'Live Connected';
+                    badge.className = 'px-2 py-0.5 rounded-full text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-500/50';
+                }
+                if (connectBtnLabel) {
+                    connectBtnLabel.textContent = 'Disconnect Google Account';
+                }
+                if (statusLabel) statusLabel.textContent = 'Google Live';
+            } else {
+                if (badge) {
+                    badge.textContent = 'Disconnected';
+                    badge.className = 'px-2 py-0.5 rounded-full text-[10px] bg-slate-800 text-slate-400 border border-slate-700';
+                }
+                if (connectBtnLabel) {
+                    connectBtnLabel.textContent = 'Connect Google Account';
+                }
+                if (statusLabel) statusLabel.textContent = 'Google Sync Off';
+            }
+        }
+
+        function loadSampleGoogleTasks() {
+            const sampleGTasks = [
+                {
+                    id: 'gtask-sample-1',
+                    title: 'Review quarterly OKR milestones in Docs',
+                    type: 'side',
+                    dayIndex: 0,
+                    category: 'Focus',
+                    notes: 'Google Tasks: Work Focus',
+                    completed: false,
+                    xp: 20,
+                    isFromGoogleTasks: true
+                },
+                {
+                    id: 'gtask-sample-2',
+                    title: 'Reply to client proposal email draft',
+                    type: 'side',
+                    dayIndex: 1,
+                    category: 'Errand',
+                    notes: 'Due today • Google Tasks sync',
+                    completed: false,
+                    xp: 20,
+                    isFromGoogleTasks: true
+                },
+                {
+                    id: 'gtask-sample-3',
+                    title: 'Order replacement espresso beans for sanctuary',
+                    type: 'side',
+                    dayIndex: 2,
+                    category: 'Habit',
+                    notes: 'Google Tasks: Personal',
+                    completed: true,
+                    xp: 20,
+                    isFromGoogleTasks: true
+                }
+            ];
+
+            const existingNonGtasks = appState.sideQuests.filter(q => !q.isFromGoogleTasks);
+            appState.sideQuests = [...existingNonGtasks, ...sampleGTasks];
+            saveData();
+            renderDayPills();
+            renderObjectives();
+            showToast('Sample Google Tasks integrated into Side Quests!', 'sky');
+        }
+
+        function parseICS(icsString, sourceMeta = null) {
+            if (!icsString || typeof icsString !== 'string') return [];
+            const rawEvents = [];
+            const lines = icsString.split(/\r\n|\n|\r/);
+            let insideEvent = false;
+            let currentEvent = {};
+
+            const weekDates = getCurrentWeekDates();
+            const startOfWeek = new Date(weekDates[0]);
+            startOfWeek.setHours(0, 0, 0, 0);
+            const endOfWeek = new Date(weekDates[6]);
+            endOfWeek.setHours(23, 59, 59, 999);
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i];
+                while (i + 1 < lines.length && (lines[i + 1].startsWith(' ') || lines[i + 1].startsWith('\t'))) {
+                    line += lines[i + 1].substring(1);
+                    i++;
+                }
+
+                if (line.startsWith('BEGIN:VEVENT')) {
+                    insideEvent = true;
+                    currentEvent = {};
+                } else if (line.startsWith('END:VEVENT')) {
+                    if (insideEvent && currentEvent.title && currentEvent.status !== 'CANCELLED') {
+                        rawEvents.push(currentEvent);
+                    }
+                    insideEvent = false;
+                } else if (insideEvent) {
+                    const colonIndex = line.indexOf(':');
+                    if (colonIndex > -1) {
+                        const keyPart = line.substring(0, colonIndex);
+                        const val = line.substring(colonIndex + 1);
+                        const cleanKey = keyPart.split(';')[0].toUpperCase();
+
+                        if (cleanKey === 'SUMMARY') {
+                            currentEvent.title = val.replace(/\\,/g, ',').replace(/\\;/g, ';');
+                        } else if (cleanKey === 'DTSTART') {
+                            currentEvent.startDate = parseICSDate(val);
+                        } else if (cleanKey === 'DTEND') {
+                            currentEvent.endDate = parseICSDate(val);
+                        } else if (cleanKey === 'DESCRIPTION') {
+                            currentEvent.notes = val.replace(/\\n/g, '\n').replace(/\\,/g, ',');
+                        } else if (cleanKey === 'STATUS') {
+                            currentEvent.status = val.trim().toUpperCase();
+                        } else if (cleanKey === 'RRULE') {
+                            currentEvent.rrule = val;
+                        } else if (cleanKey === 'RECURRENCE-ID') {
+                            currentEvent.recurrenceId = parseICSDate(val);
+                        } else if (cleanKey === 'UID') {
+                            currentEvent.uid = val.trim();
+                        }
+                    }
+                }
+            }
+
+            const formatTime = (d) => {
+                if (!d || isNaN(d.getTime())) return '';
+                const hrs = String(d.getHours()).padStart(2, '0');
+                const mins = String(d.getMinutes()).padStart(2, '0');
+                return `${hrs}:${mins}`;
+            };
+
+            const dayNameToIdx = { 'SU': 0, 'MO': 1, 'TU': 2, 'WE': 3, 'TH': 4, 'FR': 5, 'SA': 6 };
+            const expandedObjectives = [];
+
+            rawEvents.forEach((ev, idx) => {
+                if (!ev.startDate) return;
+
+                const eventStart = new Date(ev.startDate);
+                const timeStr = formatTime(eventStart);
+                const endTimeStr = ev.endDate ? formatTime(ev.endDate) : '';
+
+                if (!ev.rrule) {
+                    if (eventStart >= startOfWeek && eventStart <= endOfWeek) {
+                        expandedObjectives.push({
+                            id: 'cal-event-' + (sourceMeta?.id || 'gen') + '-' + idx + '-' + Date.now(),
+                            uid: ev.uid || '',
+                            title: ev.title || 'Campaign Objective',
+                            type: 'main',
+                            dayIndex: eventStart.getDay(),
+                            time: timeStr,
+                            endTime: endTimeStr,
+                            category: (ev.title || '').toLowerCase().includes('sync') || (ev.title || '').toLowerCase().includes('meet') ? 'Meeting' : 'Focus',
+                            notes: ev.notes || '',
+                            completed: false,
+                            xp: 50,
+                            isFromCalendar: true,
+                            sourceName: sourceMeta?.name || '',
+                            sourceColor: sourceMeta?.color || 'amber'
+                        });
+                    }
+                    return;
+                }
+
+                if (eventStart > endOfWeek) return;
+
+                const ruleParts = {};
+                ev.rrule.split(';').forEach(p => {
+                    const [k, v] = p.split('=');
+                    if (k && v) ruleParts[k.toUpperCase()] = v.toUpperCase();
+                });
+
+                if (ruleParts['UNTIL']) {
+                    const untilDate = parseICSDate(ruleParts['UNTIL']);
+                    if (untilDate && untilDate < startOfWeek) {
+                        return;
+                    }
+                }
+
+                const freq = ruleParts['FREQ'];
+                const byDayStr = ruleParts['BYDAY'];
+                const activeDays = new Set();
+
+                if (byDayStr) {
+                    const days = byDayStr.split(',');
+                    days.forEach(d => {
+                        const cleanCode = d.replace(/[^A-Z]/g, '').slice(-2);
+                        if (dayNameToIdx[cleanCode] !== undefined) {
+                            activeDays.add(dayNameToIdx[cleanCode]);
+                        }
+                    });
+                } else if (freq === 'WEEKLY') {
+                    activeDays.add(eventStart.getDay());
+                } else if (freq === 'DAILY') {
+                    for (let d = 0; d < 7; d++) activeDays.add(d);
+                } else if (freq === 'MONTHLY' || freq === 'YEARLY') {
+                    weekDates.forEach((wd, dIdx) => {
+                        if (wd.getDate() === eventStart.getDate()) {
+                            if (freq === 'MONTHLY' || wd.getMonth() === eventStart.getMonth()) {
+                                activeDays.add(dIdx);
+                            }
+                        }
+                    });
+                }
+
+                activeDays.forEach(dayIdx => {
+                    const occDate = new Date(weekDates[dayIdx]);
+                    occDate.setHours(eventStart.getHours(), eventStart.getMinutes());
+                    if (occDate < eventStart) return;
+
+                    expandedObjectives.push({
+                        id: 'cal-event-rec-' + (sourceMeta?.id || 'gen') + '-' + idx + '-d' + dayIdx,
+                        uid: ev.uid || '',
+                        title: ev.title || 'Campaign Objective',
+                        type: 'main',
+                        dayIndex: dayIdx,
+                        time: timeStr,
+                        endTime: endTimeStr,
+                        category: (ev.title || '').toLowerCase().includes('sync') || (ev.title || '').toLowerCase().includes('meet') ? 'Meeting' : 'Focus',
+                        notes: ev.notes || '',
+                        completed: false,
+                        xp: 50,
+                        isFromCalendar: true,
+                        sourceName: sourceMeta?.name || '',
+                        sourceColor: sourceMeta?.color || 'amber'
+                    });
+                });
+            });
+
+            const uniqueObjectives = [];
+            const seenKeys = new Set();
+
+            expandedObjectives.forEach(obj => {
+                const cleanTitle = (obj.title || '').trim().toLowerCase();
+                const key = `${obj.dayIndex}_${obj.time}_${cleanTitle}`;
+                if (!seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    uniqueObjectives.push(obj);
+                }
+            });
+
+            return uniqueObjectives;
+        }
+
+        function parseICSDate(icsDateStr) {
+            if (!icsDateStr) return null;
+            const clean = icsDateStr.replace(/[^0-9TZ]/g, '');
+            const year = parseInt(clean.substring(0, 4));
+            const month = parseInt(clean.substring(4, 6)) - 1;
+            const day = parseInt(clean.substring(6, 8));
+
+            if (clean.includes('T')) {
+                const hour = parseInt(clean.substring(9, 11)) || 0;
+                const min = parseInt(clean.substring(11, 13)) || 0;
+                const sec = parseInt(clean.substring(13, 15)) || 0;
+                if (clean.endsWith('Z')) {
+                    return new Date(Date.UTC(year, month, day, hour, min, sec));
+                }
+                return new Date(year, month, day, hour, min, sec);
+            }
+            return new Date(year, month, day);
+        }
+
+        let refreshSecondsRemaining = appSettings.refreshIntervalMinutes * 60;
+        let refreshIntervalTimer = null;
+
+        function startAutoRefreshTimer() {
+            if (refreshIntervalTimer) clearInterval(refreshIntervalTimer);
+            refreshSecondsRemaining = appSettings.refreshIntervalMinutes * 60;
+
+            refreshIntervalTimer = setInterval(() => {
+                refreshSecondsRemaining--;
+
+                if (refreshSecondsRemaining <= 0) {
+                    executeCalendarSync();
+                    refreshSecondsRemaining = appSettings.refreshIntervalMinutes * 60;
+                }
+
+                updateRefreshIndicator();
+            }, 1000);
+        }
+
+        function updateRefreshIndicator() {
+            const minutes = Math.floor(refreshSecondsRemaining / 60);
+            const seconds = refreshSecondsRemaining % 60;
+            const padded = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            const el = document.getElementById('refresh-indicator');
+            if (el) el.textContent = `Syncs in ${padded}`;
+        }
+
+        async function fetchWithProxyFallback(url) {
+            let cleanUrl = url.trim();
+            if (cleanUrl.startsWith('webcal://')) {
+                cleanUrl = cleanUrl.replace('webcal://', 'https://');
+            }
+
+            const proxyAttempts = [
+                async () => {
+                    const cacheBuster = `&_t=${Date.now()}`;
+                    const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(cleanUrl)}${cacheBuster}`);
+                    if (!res.ok) throw new Error("AllOrigins raw failed");
+                    const text = await res.text();
+                    if (text && text.includes('BEGIN:VCALENDAR')) return text;
+                    throw new Error("Invalid raw payload");
+                },
+                async () => {
+                    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(cleanUrl)}`);
+                    if (!res.ok) throw new Error("AllOrigins get failed");
+                    const data = await res.json();
+                    if (data && data.contents && data.contents.includes('BEGIN:VCALENDAR')) {
+                        return data.contents;
+                    }
+                    throw new Error("No VCALENDAR in payload");
+                },
+                async () => {
+                    const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(cleanUrl)}`);
+                    if (!res.ok) throw new Error("CodeTabs failed");
+                    const text = await res.text();
+                    if (text && text.includes('BEGIN:VCALENDAR')) return text;
+                    throw new Error("Invalid payload from CodeTabs");
+                },
+                async () => {
+                    const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(cleanUrl)}`);
+                    if (!res.ok) throw new Error("CorsProxy.io failed");
+                    const text = await res.text();
+                    if (text && text.includes('BEGIN:VCALENDAR')) return text;
+                    throw new Error("Invalid payload from CorsProxy");
+                }
+            ];
+
+            for (let i = 0; i < proxyAttempts.length; i++) {
+                try {
+                    const text = await proxyAttempts[i]();
+                    if (text && text.includes('BEGIN:VCALENDAR')) {
+                        return text;
+                    }
+                } catch (e) {
+                    // Try next fallback
+                }
+            }
+
+            throw new Error("Unable to reach calendar feed across proxies. Browser CORS prevented live download.");
+        }
+
+        async function executeCalendarSync() {
+            const syncIcon = document.getElementById('manual-refresh-btn');
+            if (syncIcon) syncIcon.classList.add('animate-spin');
+
+            if (gtasksAccessToken) {
+                await Promise.all([
+                    fetchGoogleTasks(),
+                    fetchGoogleCalendarEventsDirect()
+                ]);
+            }
+
+            const feeds = appSettings.calendarFeeds || [];
+            const activeFeeds = feeds.filter(f => f.url && f.url.trim().length > 0);
+            if (activeFeeds.length > 0) {
+                try {
+                    let aggregatedEvents = [];
+                    for (const feed of activeFeeds) {
+                        try {
+                            const icsData = await fetchWithProxyFallback(feed.url);
+                            const parsed = parseICS(icsData, feed);
+                            aggregatedEvents.push(...parsed);
+                        } catch (feedErr) {
+                            console.warn(`Failed to sync calendar feed [${feed.name}]:`, feedErr);
+                        }
+                    }
+
+                    if (aggregatedEvents.length > 0) {
+                        const seenKeys = new Set();
+                        const uniqueEvents = [];
+                        aggregatedEvents.forEach(item => {
+                            const key = `${item.dayIndex}_${item.time}_${item.title.trim().toLowerCase()}`;
+                            if (!seenKeys.has(key)) {
+                                seenKeys.add(key);
+                                uniqueEvents.push(item);
+                            }
+                        });
+
+                        const completedMap = new Map();
+                        appState.mainObjectives.forEach(o => {
+                            if (o.completed) completedMap.set(o.title, true);
+                        });
+                        uniqueEvents.forEach(p => {
+                            if (completedMap.get(p.title)) p.completed = true;
+                        });
+
+                        const manualObjectives = appState.mainObjectives.filter(o => !o.isFromCalendar);
+                        appState.mainObjectives = [...manualObjectives, ...uniqueEvents];
+                        saveData();
+                        renderObjectives();
+                        renderDayPills();
+                    }
+                } catch (err) {
+                    console.warn("Live multi-calendar fetch error:", err);
+                }
+            }
+
+            updateCalendarBanner();
+            updateCalendarsBadge();
+            if (syncIcon) {
+                setTimeout(() => syncIcon.classList.remove('animate-spin'), 600);
+            }
+        }
+
+        function updateCalendarsBadge() {
+            const badge = document.getElementById('calendars-count-badge');
+            if (!badge) return;
+            const activeFeeds = (appSettings.calendarFeeds || []).filter(f => f.url && f.url.trim().length > 0);
+            if (activeFeeds.length === 0) {
+                badge.textContent = '0 Connected';
+                badge.className = 'text-[11px] text-slate-400';
+            } else {
+                badge.textContent = `${activeFeeds.length} Calendar${activeFeeds.length === 1 ? '' : 's'}`;
+                badge.className = 'text-[11px] text-amber-300 font-medium';
+            }
+        }
+
+        function updateCalendarBanner() {
+            const banner = document.getElementById('calendar-connect-banner');
+            if (!banner) return;
+            const activeFeeds = (appSettings.calendarFeeds || []).filter(f => f.url && f.url.trim().length > 0);
+            const hasEvents = appState.mainObjectives.length > 0;
+            
+            if (activeFeeds.length === 0 && !hasEvents) {
+                banner.classList.remove('hidden');
+            } else {
+                banner.classList.add('hidden');
+            }
+        }
+
+        function renderCalendarFeedRows() {
+            const container = document.getElementById('calendar-feeds-list');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const feeds = appSettings.calendarFeeds || [];
+            feeds.forEach((feed, idx) => {
+                const row = document.createElement('div');
+                row.className = "p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2 relative";
+
+                const colorDotMap = {
+                    amber: 'bg-amber-400',
+                    sky: 'bg-sky-400',
+                    purple: 'bg-purple-400',
+                    emerald: 'bg-emerald-400',
+                    rose: 'bg-rose-400'
+                };
+
+                row.innerHTML = `
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 flex-1">
+                            <span class="w-2.5 h-2.5 rounded-full ${colorDotMap[feed.color || 'amber']} flex-shrink-0"></span>
+                            <input 
+                                type="text" 
+                                placeholder="Calendar Label (e.g. Work, Shared)" 
+                                value="${escapeHtml(feed.name || '')}" 
+                                class="feed-name-input bg-slate-950/70 border border-slate-700/80 rounded-lg px-2 py-1 text-xs text-slate-200 placeholder-slate-500 w-full focus:outline-none focus:border-amber-500/60"
+                                data-idx="${idx}"
+                            >
+                        </div>
+                        <div class="flex items-center gap-1.5 flex-shrink-0">
+                            <select class="feed-color-select bg-slate-950/70 border border-slate-700 text-[11px] text-slate-300 rounded-lg px-1.5 py-1 focus:outline-none" data-idx="${idx}">
+                                <option value="amber" ${feed.color === 'amber' ? 'selected' : ''}>Gold</option>
+                                <option value="sky" ${feed.color === 'sky' ? 'selected' : ''}>Sky Blue</option>
+                                <option value="purple" ${feed.color === 'purple' ? 'selected' : ''}>Purple</option>
+                                <option value="emerald" ${feed.color === 'emerald' ? 'selected' : ''}>Emerald</option>
+                                <option value="rose" ${feed.color === 'rose' ? 'selected' : ''}>Rose</option>
+                            </select>
+                            <button type="button" class="remove-feed-btn p-1 text-slate-500 hover:text-rose-400 transition-colors" data-idx="${idx}" title="Remove feed">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <input 
+                            type="url" 
+                            placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" 
+                            value="${escapeHtml(feed.url || '')}" 
+                            class="feed-url-input w-full bg-slate-950/70 border border-slate-700/80 rounded-lg px-2 py-1 text-[11px] text-slate-300 placeholder-slate-600 font-mono focus:outline-none focus:border-amber-500/60"
+                            data-idx="${idx}"
+                        >
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+
+            container.querySelectorAll('.remove-feed-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const idx = parseInt(btn.dataset.idx, 10);
+                    if (appSettings.calendarFeeds.length > 1) {
+                        appSettings.calendarFeeds.splice(idx, 1);
+                    } else {
+                        appSettings.calendarFeeds[0].url = '';
+                        appSettings.calendarFeeds[0].name = 'Primary Calendar';
+                    }
+                    renderCalendarFeedRows();
+                });
+            });
+
+            container.querySelectorAll('.feed-name-input').forEach(input => {
+                input.addEventListener('input', () => {
+                    const idx = parseInt(input.dataset.idx, 10);
+                    if (appSettings.calendarFeeds[idx]) {
+                        appSettings.calendarFeeds[idx].name = input.value;
+                    }
+                });
+            });
+
+            container.querySelectorAll('.feed-url-input').forEach(input => {
+                input.addEventListener('input', () => {
+                    const idx = parseInt(input.dataset.idx, 10);
+                    if (appSettings.calendarFeeds[idx]) {
+                        appSettings.calendarFeeds[idx].url = input.value;
+                    }
+                });
+            });
+
+            container.querySelectorAll('.feed-color-select').forEach(sel => {
+                sel.addEventListener('change', () => {
+                    const idx = parseInt(sel.dataset.idx, 10);
+                    if (appSettings.calendarFeeds[idx]) {
+                        appSettings.calendarFeeds[idx].color = sel.value;
+                        renderCalendarFeedRows();
+                    }
+                });
+            });
+
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function toggleQuestCompletion(id, isCompleted, xpValue) {
+            let found = appState.mainObjectives.find(x => x.id === id);
+            if (!found) {
+                found = appState.sideQuests.find(x => x.id === id);
+            }
+
+            if (found) {
+                found.completed = isCompleted;
+                if (isCompleted) {
+                    awardXP(xpValue);
+                } else {
+                    deductXP(xpValue);
+                    showToast('Quest unmarked', 'slate');
+                }
+
+                if (found.isFromGoogleTasks && found.gtaskId && gtasksAccessToken) {
+                    updateGoogleTaskStatus(found.taskListId, found.gtaskId, isCompleted);
+                }
+
+                saveData();
+                renderDayPills();
+                renderObjectives();
+            }
+        }
+
+        function deleteQuest(id) {
+            const found = appState.sideQuests.find(s => s.id === id);
+            if (found && found.isFromGoogleTasks && found.gtaskId && gtasksAccessToken) {
+                fetch(`https://tasks.googleapis.com/tasks/v1/lists/${found.taskListId || defaultGTasksListId}/tasks/${found.gtaskId}`, {
+                    method: 'DELETE',
+                    headers: { Authorization: `Bearer ${gtasksAccessToken}` }
+                }).catch(() => {});
+            }
+
+            appState.mainObjectives = appState.mainObjectives.filter(o => o.id !== id);
+            appState.sideQuests = appState.sideQuests.filter(s => s.id !== id);
+            saveData();
+            renderDayPills();
+            renderObjectives();
+            showToast('Quest retired from log', 'slate');
+        }
+
+        async function addSideQuest(title, category = 'Focus', syncToGoogle = false) {
+            let gtaskMeta = null;
+            if (syncToGoogle && gtasksAccessToken) {
+                gtaskMeta = await createGoogleTask(title, '', appState.selectedDayIndex);
+            }
+
+            const newQuest = {
+                id: gtaskMeta ? 'gtask-' + gtaskMeta.gtaskId : 'sq-' + Date.now(),
+                gtaskId: gtaskMeta ? gtaskMeta.gtaskId : null,
+                taskListId: gtaskMeta ? gtaskMeta.taskListId : null,
+                title: title.trim(),
+                type: 'side',
+                dayIndex: appState.selectedDayIndex,
+                category: category,
+                completed: false,
+                xp: 20,
+                isFromGoogleTasks: !!gtaskMeta
+            };
+            appState.sideQuests.push(newQuest);
+            saveData();
+            renderDayPills();
+            renderObjectives();
+            showToast(gtaskMeta ? 'Inscribed & synced with Google Tasks!' : 'New side quest inscribed!', 'sky');
+        }
+
+        function setupDetailedQuestForm() {
+            const daySelect = document.getElementById('quest-day');
+            if (daySelect) {
+                daySelect.innerHTML = '';
+                DAYS_OF_WEEK.forEach((name, idx) => {
+                    const opt = document.createElement('option');
+                    opt.value = idx;
+                    opt.textContent = name;
+                    if (idx === appState.selectedDayIndex) opt.selected = true;
+                    daySelect.appendChild(opt);
+                });
+            }
+        }
+
+        function showToast(message, color = 'emerald') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            
+            const colorClasses = {
+                emerald: 'bg-emerald-950/90 border-emerald-500/40 text-emerald-200',
+                gold: 'bg-amber-950/90 border-amber-500/50 text-amber-200',
+                sky: 'bg-sky-950/90 border-sky-500/40 text-sky-200',
+                slate: 'bg-slate-900/90 border-slate-700 text-slate-300'
+            };
+
+            toast.className = `px-4 py-2.5 rounded-xl border text-xs shadow-lg flex items-center gap-2 transform transition-all duration-300 translate-y-3 opacity-0 pointer-events-auto backdrop-blur-md ${colorClasses[color] || colorClasses.emerald}`;
+            toast.innerHTML = `
+                <i data-lucide="sparkle" class="w-3.5 h-3.5 flex-shrink-0"></i>
+                <span>${escapeHtml(message)}</span>
+            `;
+
+            container.appendChild(toast);
+            if (window.lucide) lucide.createIcons();
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-3', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-1');
+                setTimeout(() => toast.remove(), 300);
+            }, 3200);
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>"']/g, function(m) {
+                return {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;'
+                }[m];
+            });
+        }
+
+        function setupEventListeners() {
+            const groupedBtn = document.getElementById('view-mode-grouped-btn');
+            const dayBtn = document.getElementById('view-mode-day-btn');
+
+            if (groupedBtn && dayBtn) {
+                groupedBtn.addEventListener('click', () => {
+                    appState.mainObjectivesViewMode = 'grouped';
+                    groupedBtn.className = "px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all bg-amber-500/20 text-amber-300 shadow-sm";
+                    dayBtn.className = "px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-400 hover:text-slate-200 transition-all";
+                    renderObjectives();
+                });
+
+                dayBtn.addEventListener('click', () => {
+                    appState.mainObjectivesViewMode = 'day';
+                    dayBtn.className = "px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all bg-amber-500/20 text-amber-300 shadow-sm";
+                    groupedBtn.className = "px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-400 hover:text-slate-200 transition-all";
+                    renderObjectives();
+                });
+            }
+
+            const quickForm = document.getElementById('quick-sidequest-form');
+            if (quickForm) {
+                quickForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const input = document.getElementById('quick-task-input');
+                    const categorySelect = document.getElementById('quick-category-select');
+                    const pushToGTasks = document.getElementById('sync-new-to-gtasks').checked;
+                    if (input.value.trim()) {
+                        addSideQuest(input.value, categorySelect.value, pushToGTasks);
+                        input.value = '';
+                    }
+                });
+            }
+
+            const oracleBtn = document.getElementById('generate-ai-brief-btn');
+            if (oracleBtn) {
+                oracleBtn.addEventListener('click', generateAIOracleBrief);
+            }
+
+            const bannerConnectBtn = document.getElementById('banner-connect-cal-btn');
+            if (bannerConnectBtn) {
+                bannerConnectBtn.addEventListener('click', () => {
+                    const openSettings = document.getElementById('open-settings-btn');
+                    if (openSettings) openSettings.click();
+                });
+            }
+
+            const bannerLoadSampleBtn = document.getElementById('banner-load-sample-btn');
+            if (bannerLoadSampleBtn) {
+                bannerLoadSampleBtn.addEventListener('click', () => {
+                    appState.mainObjectives = JSON.parse(JSON.stringify(sampleCalendarData));
+                    saveData();
+                    renderDayPills();
+                    renderObjectives();
+                    updateCalendarBanner();
+                    showToast('Demo schedule loaded into Main Campaign!', 'gold');
+                });
+            }
+
+            const soundBtn = document.getElementById('sound-toggle-btn');
+            if (soundBtn) {
+                soundBtn.addEventListener('click', () => {
+                    audioEnabled = !audioEnabled;
+                    appSettings.soundEnabled = audioEnabled;
+                    saveData();
+                    const soundIcon = document.getElementById('sound-icon');
+                    if (soundIcon) {
+                        soundIcon.setAttribute('data-lucide', audioEnabled ? 'volume-2' : 'volume-x');
+                        if (window.lucide) lucide.createIcons();
+                    }
+                    showToast(audioEnabled ? 'Sanctuary soundscape enabled' : 'Sanctuary muted', 'slate');
+                });
+            }
+
+            const refreshBtn = document.getElementById('manual-refresh-btn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', executeCalendarSync);
+            }
+
+            const addQuestTriggerBtn = document.getElementById('add-quest-trigger-btn');
+            if (addQuestTriggerBtn) {
+                addQuestTriggerBtn.addEventListener('click', () => {
+                    setupDetailedQuestForm();
+                    const modal = document.getElementById('quest-modal');
+                    if (modal) modal.classList.remove('hidden');
+                });
+            }
+
+            const closeQuestModalBtn = document.getElementById('close-quest-modal-btn');
+            if (closeQuestModalBtn) {
+                closeQuestModalBtn.addEventListener('click', () => {
+                    const modal = document.getElementById('quest-modal');
+                    if (modal) modal.classList.add('hidden');
+                });
+            }
+
+            const cancelQuestBtn = document.getElementById('cancel-quest-btn');
+            if (cancelQuestBtn) {
+                cancelQuestBtn.addEventListener('click', () => {
+                    const modal = document.getElementById('quest-modal');
+                    if (modal) modal.classList.add('hidden');
+                });
+            }
+
+            const settingsModal = document.getElementById('settings-modal');
+            const openSettingsBtn = document.getElementById('open-settings-btn');
+            if (openSettingsBtn && settingsModal) {
+                openSettingsBtn.addEventListener('click', () => {
+                    const refreshIntervalInput = document.getElementById('setting-refresh-interval');
+                    const clientIdInput = document.getElementById('setting-gtasks-client-id');
+                    if (refreshIntervalInput) refreshIntervalInput.value = appSettings.refreshIntervalMinutes;
+                    if (clientIdInput) clientIdInput.value = appSettings.gtasksClientId || '';
+                    renderCalendarFeedRows();
+                    updateGTasksUI();
+                    settingsModal.classList.remove('hidden');
+                });
+            }
+
+            const calStatusBtn = document.getElementById('calendars-status-btn');
+            if (calStatusBtn) {
+                calStatusBtn.addEventListener('click', () => {
+                    if (openSettingsBtn) openSettingsBtn.click();
+                });
+            }
+
+            const addCalFeedRowBtn = document.getElementById('add-calendar-feed-row-btn');
+            if (addCalFeedRowBtn) {
+                addCalFeedRowBtn.addEventListener('click', () => {
+                    const colors = ['sky', 'purple', 'emerald', 'rose', 'amber'];
+                    const assignedColor = colors[(appSettings.calendarFeeds.length) % colors.length];
+                    appSettings.calendarFeeds.push({
+                        id: 'cal-' + Date.now(),
+                        name: `Calendar ${appSettings.calendarFeeds.length + 1}`,
+                        url: '',
+                        color: assignedColor
+                    });
+                    renderCalendarFeedRows();
+                });
+            }
+
+            const gtasksStatusBtn = document.getElementById('google-tasks-status-btn');
+            if (gtasksStatusBtn) {
+                gtasksStatusBtn.addEventListener('click', () => {
+                    if (openSettingsBtn) openSettingsBtn.click();
+                });
+            }
+
+            const closeSettingsBtn = document.getElementById('close-settings-btn');
+            if (closeSettingsBtn && settingsModal) {
+                closeSettingsBtn.addEventListener('click', () => {
+                    settingsModal.classList.add('hidden');
+                });
+            }
+
+            const saveSettingsBtn = document.getElementById('save-settings-btn');
+            if (saveSettingsBtn && settingsModal) {
+                saveSettingsBtn.addEventListener('click', () => {
+                    const intervalVal = parseInt(document.getElementById('setting-refresh-interval').value, 10);
+                    const gtasksClientId = document.getElementById('setting-gtasks-client-id').value.trim();
+                    const legacyIcalInput = document.getElementById('setting-ical-url');
+                    const legacyIcalUrl = legacyIcalInput ? legacyIcalInput.value.trim() : '';
+
+                    appSettings.refreshIntervalMinutes = intervalVal || 15;
+                    appSettings.gtasksClientId = gtasksClientId;
+                    
+                    if (legacyIcalUrl && appSettings.calendarFeeds.length > 0) {
+                        appSettings.calendarFeeds[0].url = legacyIcalUrl;
+                    }
+
+                    saveData();
+                    initGoogleAuthClient();
+                    const intervalDisp = document.getElementById('current-interval-display');
+                    if (intervalDisp) {
+                        intervalDisp.textContent = `Every ${appSettings.refreshIntervalMinutes} min`;
+                    }
+                    startAutoRefreshTimer();
+                    updateCalendarBanner();
+                    updateCalendarsBadge();
+                    settingsModal.classList.add('hidden');
+                    showToast('Settings saved!', 'emerald');
+                });
+            }
+
+            const quickLiveSyncBtn = document.getElementById('quick-live-sync-btn');
+            if (quickLiveSyncBtn) {
+                quickLiveSyncBtn.addEventListener('click', () => {
+                    executeCalendarSync();
+                });
+            }
+
+            const syncGCalApiBtn = document.getElementById('sync-gcalendar-api-btn');
+            if (syncGCalApiBtn) {
+                syncGCalApiBtn.addEventListener('click', async () => {
+                    if (!gtasksAccessToken) {
+                        const connectBtn = document.getElementById('gtasks-connect-btn');
+                        if (connectBtn) connectBtn.click();
+                        return;
+                    }
+                    await fetchGoogleCalendarEventsDirect();
+                    if (settingsModal) settingsModal.classList.add('hidden');
+                });
+            }
+
+            const detailedForm = document.getElementById('detailed-quest-form');
+            if (detailedForm) {
+                detailedForm.onsubmit = async (e) => {
+                    e.preventDefault();
+                    const title = document.getElementById('quest-title').value.trim();
+                    const type = document.getElementById('quest-type').value;
+                    const dayIdx = parseInt(document.getElementById('quest-day').value, 10);
+                    const time = document.getElementById('quest-time').value;
+                    const category = document.getElementById('quest-category').value;
+                    const notes = document.getElementById('quest-notes').value.trim();
+
+                    if (!title) return;
+
+                    if (type === 'main') {
+                        appState.mainObjectives.push({
+                            id: 'main-' + Date.now(),
+                            title,
+                            type: 'main',
+                            dayIndex: dayIdx,
+                            time: time || '',
+                            category,
+                            notes,
+                            completed: false,
+                            xp: 50,
+                            isFromCalendar: false
+                        });
+                        showToast('New Main Objective drafted!', 'gold');
+                    } else {
+                        let gtaskMeta = null;
+                        if (gtasksAccessToken) {
+                            gtaskMeta = await createGoogleTask(title, notes, dayIdx);
+                        }
+                        appState.sideQuests.push({
+                            id: gtaskMeta ? 'gtask-' + gtaskMeta.gtaskId : 'sq-' + Date.now(),
+                            gtaskId: gtaskMeta ? gtaskMeta.gtaskId : null,
+                            taskListId: gtaskMeta ? gtaskMeta.taskListId : null,
+                            title,
+                            type: 'side',
+                            dayIndex: dayIdx,
+                            time: time || '',
+                            category,
+                            notes,
+                            completed: false,
+                            xp: 20,
+                            isFromGoogleTasks: !!gtaskMeta
+                        });
+                        showToast(gtaskMeta ? 'Side quest drafted & synced to Google Tasks!' : 'Side quest accepted!', 'sky');
+                    }
+
+                    saveData();
+                    renderDayPills();
+                    renderObjectives();
+                    const modal = document.getElementById('quest-modal');
+                    if (modal) modal.classList.add('hidden');
+                    detailedForm.reset();
+                };
+            }
+
+            const applyRawBtn = document.getElementById('apply-raw-ics-btn');
+            if (applyRawBtn) {
+                applyRawBtn.addEventListener('click', () => {
+                    const rawInput = document.getElementById('raw-ics-input');
+                    const rawText = rawInput ? rawInput.value.trim() : '';
+                    if (!rawText) {
+                        showToast('Please paste calendar text first', 'slate');
+                        return;
+                    }
+                    const parsed = parseICS(rawText, { id: 'manual', name: 'Primary Calendar', color: 'amber' });
+                    if (parsed && parsed.length > 0) {
+                        const manualObjectives = appState.mainObjectives.filter(o => !o.isFromCalendar);
+                        appState.mainObjectives = [...manualObjectives, ...parsed];
+                        saveData();
+                        renderDayPills();
+                        renderObjectives();
+                        updateCalendarBanner();
+                        if (settingsModal) settingsModal.classList.add('hidden');
+                        if (rawInput) rawInput.value = '';
+                        showToast(`Successfully inscribed ${parsed.length} calendar events!`, 'emerald');
+                    } else {
+                        showToast('Could not find active events for this week in the pasted text', 'gold');
+                    }
+                });
+            }
+
+            const gtasksConnectBtn = document.getElementById('gtasks-connect-btn');
+            if (gtasksConnectBtn) {
+                gtasksConnectBtn.addEventListener('click', () => {
+                    if (gtasksAccessToken) {
+                        gtasksAccessToken = null;
+                        appSettings.gtasksConnected = false;
+                        saveData();
+                        updateGTasksUI();
+                        showToast('Disconnected Google Account', 'slate');
+                        return;
+                    }
+                    requestGoogleToken();
+                });
+            }
+
+            const gtasksSampleBtn = document.getElementById('gtasks-sample-btn');
+            if (gtasksSampleBtn) {
+                gtasksSampleBtn.addEventListener('click', () => {
+                    loadSampleGoogleTasks();
+                    if (settingsModal) settingsModal.classList.add('hidden');
+                });
+            }
+
+            const gtasksJsonFileInput = document.getElementById('setting-gtasks-json-file');
+            if (gtasksJsonFileInput) {
+                gtasksJsonFileInput.addEventListener('change', function(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = function(evt) {
+                        try {
+                            const json = JSON.parse(evt.target.result);
+                            const items = Array.isArray(json) ? json : (json.items || json.tasks || []);
+                            const imported = [];
+
+                            items.forEach((item, i) => {
+                                const title = item.title || item.task;
+                                if (title) {
+                                    let dayIdx = appState.selectedDayIndex;
+                                    if (item.due) {
+                                        const d = new Date(item.due);
+                                        if (!isNaN(d.getTime())) dayIdx = d.getDay();
+                                    }
+                                    imported.push({
+                                        id: 'gtask-file-' + i + '-' + Date.now(),
+                                        title: title,
+                                        type: 'side',
+                                        dayIndex: dayIdx,
+                                        category: 'Focus',
+                                        notes: item.notes || '',
+                                        completed: item.status === 'completed',
+                                        xp: 20,
+                                        isFromGoogleTasks: true
+                                    });
+                                }
+                            });
+
+                            if (imported.length > 0) {
+                                const existing = appState.sideQuests.filter(q => !q.isFromGoogleTasks);
+                                appState.sideQuests = [...existing, ...imported];
+                                saveData();
+                                renderDayPills();
+                                renderObjectives();
+                                if (settingsModal) settingsModal.classList.add('hidden');
+                                showToast(`Imported ${imported.length} tasks from JSON!`, 'sky');
+                            } else {
+                                showToast('No tasks detected in JSON file', 'slate');
+                            }
+                        } catch (err) {
+                            showToast('Invalid JSON file format', 'slate');
+                        }
+                    };
+                    reader.readAsText(file);
+                });
+            }
+
+            const icsFileInput = document.getElementById('setting-ics-file');
+            if (icsFileInput) {
+                icsFileInput.addEventListener('change', function(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = function(evt) {
+                        try {
+                            const icsText = evt.target.result;
+                            const parsed = parseICS(icsText);
+                            if (parsed.length > 0) {
+                                appState.mainObjectives = parsed;
+                                saveData();
+                                renderDayPills();
+                                renderObjectives();
+                                updateCalendarBanner();
+                                if (settingsModal) settingsModal.classList.add('hidden');
+                                showToast(`Loaded ${parsed.length} calendar events from file!`, 'emerald');
+                            } else {
+                                showToast('No scheduled events found in .ics file', 'slate');
+                            }
+                        } catch (err) {
+                            showToast('Failed to parse .ics file', 'slate');
+                        }
+                    };
+                    reader.readAsText(file);
+                });
+            }
+
+            const loadSampleEventsBtn = document.getElementById('load-sample-events-btn');
+            if (loadSampleEventsBtn) {
+                loadSampleEventsBtn.addEventListener('click', () => {
+                    appState.mainObjectives = JSON.parse(JSON.stringify(sampleCalendarData));
+                    appState.sideQuests = JSON.parse(JSON.stringify(sampleSideQuests));
+                    saveData();
+                    renderDayPills();
+                    renderObjectives();
+                    updateCalendarBanner();
+                    if (settingsModal) settingsModal.classList.add('hidden');
+                    showToast('Sample weekly quest log loaded!', 'gold');
+                });
+            }
+
+            const resetDataBtn = document.getElementById('reset-data-btn');
+            if (resetDataBtn) {
+                resetDataBtn.addEventListener('click', () => {
+                    appState.mainObjectives = [];
+                    appState.sideQuests = [];
+                    appState.xp = 0;
+                    saveData();
+                    renderDayPills();
+                    renderObjectives();
+                    updateXPDisplay();
+                    updateCalendarBanner();
+                    if (settingsModal) settingsModal.classList.add('hidden');
+                    showToast('The Portal quest log reset to empty slate', 'slate');
+                });
+            }
+
+            const wisdomList = [
+                "\"When the winds change during the week, step through The Portal with calm clarity and adjust your course.\"",
+                "\"Resting at the sanctuary inn is just as essential to victory as swinging your sword in combat.\"",
+                "\"A side quest completed with mindfulness builds the warrior's spirit for the main campaign.\"",
+                "\"Do not fear shifting a milestone. The Portal remains open for your steady return.\""
+            ];
+            let wisdomIdx = 0;
+            setInterval(() => {
+                wisdomIdx = (wisdomIdx + 1) % wisdomList.length;
+                const el = document.getElementById('tavern-wisdom');
+                if (el) {
+                    el.style.opacity = '0';
+                    setTimeout(() => {
+                        el.textContent = wisdomList[wisdomIdx];
+                        el.style.opacity = '1';
+                    }, 400);
+                }
+            }, 18000);
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadSavedData();
+            renderDayPills();
+            renderObjectives();
+            setupEventListeners();
+            startAutoRefreshTimer();
+            initGoogleAuthClient();
+            updateGTasksUI();
+            updateCalendarBanner();
+            updateCalendarsBadge();
+
+            if (window.lucide) lucide.createIcons();
+
+            const primeAudio = () => {
+                initAudio();
+                window.removeEventListener('click', primeAudio);
+                window.removeEventListener('touchstart', primeAudio);
+            };
+            window.addEventListener('click', primeAudio);
+            window.addEventListener('touchstart', primeAudio);
+        });
+    </script>
+</body>
+</html>
